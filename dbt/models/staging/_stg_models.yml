@@ -3,11 +3,12 @@ version: 2
 models:
   - name: stg_cauc
     columns:
-      - name: cod_ibge
-        tests: [not_null, unique]
-      - name: uf
-        tests:
-          - accepted_values:
+    - name: cod_ibge
+      tests: [not_null, unique]
+    - name: uf
+      tests:
+        - accepted_values:
+            arguments:
               values: ['PB']
 
   - name: stg_siconfi_rreo
@@ -31,3 +32,5 @@ models:
     columns:
       - name: numero_controle_pncp
         tests: [not_null, unique]
+      - name: cod_ibge
+        tests: [not_null]

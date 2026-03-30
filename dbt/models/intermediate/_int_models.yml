@@ -1,0 +1,79 @@
+version: 2
+
+models:
+  - name: int_eorcam
+    description: >
+      Execução orçamentária bruta por município/ano (2020–2025).
+      Grain: (cod_ibge, ano). Postprocessor aplica PESOS_ANO no Bloco 7.
+    columns:
+      - name: cod_ibge
+        tests: [not_null]
+      - name: ano
+        tests: [not_null]
+      - name: entregou_rreo
+        tests: [not_null]
+
+  - name: int_lliq_base
+    description: >
+      Componentes brutos DCL do RGF Anexo 05 por município/ano.
+      Grain: (cod_ibge, ano). Fallback pré/pós-RPNP, decay e lliq_parcial
+      aplicados pelo siconfi_postprocessor no Bloco 7.
+    columns:
+      - name: cod_ibge
+        tests: [not_null]
+      - name: ano
+        tests: [not_null]
+      - name: periodicidade_rgf
+        tests:
+          - accepted_values:
+              arguments:
+                values: ['Q', 'S']
+
+  - name: int_rproc
+    description: >
+      Contagem de anos crônicos de RP Processados > 3% por município.
+      Grain: (cod_ibge). JOIN direto no mart do Bloco 7.
+    columns:
+      - name: cod_ibge
+        tests: [not_null, unique]
+      - name: n_anos_cronicos
+        tests: [not_null]
+
+  - name: int_qsiconfi
+    description: >
+      Anos com RREO entregue por município (2020–2025).
+      Grain: (cod_ibge). JOIN direto no mart do Bloco 7.
+    columns:
+      - name: cod_ibge
+        tests: [not_null, unique]
+      - name: anos_entregues
+        tests: [not_null]
+
+  - name: int_cauc_gravidade
+    description: >
+      Gravidade das pendências CAUC por município (snapshot diário).
+      Grain: (cod_ibge). ccauc in [0.0, 1.0]. JOIN direto no mart do Bloco 7.
+    columns:
+      - name: cod_ibge
+        tests: [not_null, unique]
+      - name: ccauc
+        tests: [not_null]
+
+  - name: int_autonomia_base
+    description: >
+      Autonomia tributária bruta por município/ano (2020–2024).
+      Grain: (cod_ibge, ano). Sigmoid por porte aplicada pelo
+      dca_postprocessor no Bloco 7. Sem fallback RREO aqui.
+    columns:
+      - name: cod_ibge
+        tests: [not_null]
+      - name: ano
+        tests: [not_null]
+
+  - name: int_pncp_agregado
+    description: >
+      Agregação PNCP dos últimos 12 meses por município.
+      Grain: (cod_ibge). Alimenta mart_pncp_municipios no Bloco 7.
+    columns:
+      - name: cod_ibge
+        tests: [not_null, unique]

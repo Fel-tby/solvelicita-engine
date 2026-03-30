@@ -1,24 +1,34 @@
-WITH source AS (SELECT * FROM {{ source('raw', 'pncp') }}),
+WITH source AS (
+    SELECT * FROM {{ source('raw', 'pncp') }}
+),
 renamed AS (
     SELECT
-        numerocontrolepncp                          AS numero_controle_pncp,
+        numerocontrolepncp                                                           AS numero_controle_pncp,
         uf,
-        CAST(anocompra      AS INT64)               AS ano_compra,
-        CAST(mes            AS INT64)               AS mes,
-        modalidadenome                              AS modalidade_nome,
-        mododisputanome                             AS modo_disputa_nome,
-        orgaoentidade                               AS orgao_entidade,
-        unidadeorgao                                AS unidade_orgao,
-        objetocompra                                AS objeto_compra,
-        situacaocompranome                          AS situacao_compra_nome,
-        CAST(valortotalestimado   AS FLOAT64)       AS valor_total_estimado,
-        CAST(valortotalhomologado AS FLOAT64)       AS valor_total_homologado,
+        CAST(CAST(anocompra        AS FLOAT64) AS INT64)                            AS ano_compra,
+        CAST(CAST(mes              AS FLOAT64) AS INT64)                            AS mes,
+        CAST(CAST(modalidadeid     AS FLOAT64) AS INT64)                            AS modalidade_id,
+        modalidadenome                                                               AS modalidade_nome,
+        mododisputanome                                                              AS modo_disputa_nome,
+
+        CAST(CAST(
+            JSON_EXTRACT_SCALAR(unidadeorgao, '$.codigoIbge')
+        AS FLOAT64) AS INT64)                                                        AS cod_ibge,
+        JSON_EXTRACT_SCALAR(unidadeorgao, '$.municipioNome')                         AS municipio_nome,
+        JSON_EXTRACT_SCALAR(unidadeorgao, '$.ufSigla')                               AS uf_unidade,
+        JSON_EXTRACT_SCALAR(unidadeorgao, '$.nomeUnidade')                           AS nome_unidade,
+
+        JSON_EXTRACT_SCALAR(orgaoentidade, '$.cnpj')                                 AS orgao_cnpj,
+        JSON_EXTRACT_SCALAR(orgaoentidade, '$.razaoSocial')                          AS orgao_razao_social,
+
+        objetocompra                                                                  AS objeto_compra,
+        situacaocompranome                                                            AS situacao_compra_nome,
+        CAST(valortotalestimado   AS FLOAT64)                                         AS valor_total_estimado,
+        CAST(valortotalhomologado AS FLOAT64)                                         AS valor_total_homologado,
         srp,
-        PARSE_DATE('%Y-%m-%d',
-            SUBSTR(datapublicacaopncp, 1, 10))      AS data_publicacao_pncp,
-        PARSE_DATE('%Y-%m-%d',
-            SUBSTR(dataatualizacaoglobal, 1, 10))   AS data_atualizacao,
-        sem_dados
+        PARSE_DATE('%Y-%m-%d', SUBSTR(datapublicacaopncp,    1, 10))                 AS data_publicacao_pncp,
+        PARSE_DATE('%Y-%m-%d', SUBSTR(dataatualizacaoglobal, 1, 10))                 AS data_atualizacao
+
     FROM source
     WHERE sem_dados IS NULL OR sem_dados != 'True'
 )
