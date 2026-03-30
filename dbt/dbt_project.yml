@@ -3,6 +3,7 @@ version: "1.0.0"
 profile: solvelicita
 
 model-paths: ["models"]
+macro-paths: ["macros"]
 seed-paths: ["seeds"]
 
 models:

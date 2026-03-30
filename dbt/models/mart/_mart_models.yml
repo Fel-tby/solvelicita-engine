@@ -1,0 +1,27 @@
+version: 2
+
+models:
+  - name: mart_indicadores_municipios
+    description: >
+      Tabela hub por município — entrada do solvency.py no Bloco 8.
+      Colunas eorcam_raw, lliq_raw, lliq_parcial, dias_atraso, decay_fator,
+      dado_suspeito_lliq, dado_defasado, autonomia_media e autonomia_critica
+      são preenchidas pelos postprocessors Python após dbt run.
+    columns:
+      - name: cod_ibge
+        tests: [not_null, unique]
+      - name: ente
+        tests: [not_null]
+      - name: anos_entregues
+        tests: [not_null]
+      - name: n_anos_cronicos
+        tests: [not_null]
+      - name: ccauc
+        tests: [not_null]
+
+  - name: mart_pncp_municipios
+    description: >
+      Visão consolidada de licitações por município — últimos 12 meses.
+    columns:
+      - name: cod_ibge
+        tests: [not_null, unique]
