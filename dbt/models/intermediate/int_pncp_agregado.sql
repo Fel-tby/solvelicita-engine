@@ -1,7 +1,7 @@
 WITH janela AS (
     SELECT *
     FROM {{ ref('stg_pncp') }}
-    WHERE data_publicacao_pncp >= DATE_SUB(CURRENT_DATE(), INTERVAL 12 MONTH)
+    WHERE data_publicacao_pncp >= DATE_SUB(CURRENT_DATE(), INTERVAL 6 MONTH)
       AND cod_ibge IS NOT NULL
 )
 SELECT
