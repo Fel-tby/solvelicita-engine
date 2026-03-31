@@ -51,9 +51,9 @@ const COLUNAS = [
 
 function corPorScore(score) {
   if (score == null || isNaN(score)) return 'var(--risk-nd)'
-  if (score >= 75) return 'var(--risk-baixo)'
-  if (score >= 55) return 'var(--risk-medio)'
-  if (score >= 35) return 'var(--risk-alto)'
+  if (score >= 80) return 'var(--risk-baixo)'
+  if (score >= 60) return 'var(--risk-medio)'
+  if (score >= 40) return 'var(--risk-alto)'
   return 'var(--risk-critico)'
 }
 

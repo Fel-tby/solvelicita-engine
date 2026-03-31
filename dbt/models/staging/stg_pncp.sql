@@ -31,5 +31,9 @@ renamed AS (
 
     FROM source
     WHERE sem_dados IS NULL OR sem_dados != 'True'
+    QUALIFY ROW_NUMBER() OVER(
+        PARTITION BY numerocontrolepncp
+        ORDER BY dataatualizacaoglobal DESC
+    ) = 1
 )
 SELECT * FROM renamed

@@ -20,5 +20,5 @@ SELECT
 FROM {{ ref('int_pncp_agregado') }} p
 LEFT JOIN (
     SELECT DISTINCT cod_ibge, uf, municipio AS ente, populacao
-    FROM {{ ref('stg_cauc') }}
+    FROM {{ ref('stg_municipios') }}
 ) s ON p.cod_ibge = s.cod_ibge

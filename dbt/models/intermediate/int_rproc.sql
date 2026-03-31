@@ -60,7 +60,7 @@ contagem AS (
     GROUP BY cod_ibge
 ),
 spine AS (
-    SELECT DISTINCT cod_ibge FROM {{ ref('stg_cauc') }}
+    SELECT DISTINCT cod_ibge FROM {{ ref('stg_municipios') }}
 )
 SELECT
     s.cod_ibge,

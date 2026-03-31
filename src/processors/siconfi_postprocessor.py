@@ -27,11 +27,11 @@ from scorers.config import (
     FIM_PERIODO_MES,
 )
 
-PROJECT    = "solvelicita"
-DATASET_I  = "intermediate"
-DATASET_M  = "mart"
-TABLE_MART = f"{PROJECT}.{DATASET_M}.mart_indicadores_municipios"
-HOJE       = date.today()
+PROJECT      = "solvelicita"
+DATASET_I    = "intermediate"
+DATASET_M    = "mart"
+TABLE_TARGET = f"{PROJECT}.{DATASET_I}.int_siconfi_postprocessed"
+HOJE         = date.today()
 
 
 def _bq(client: bigquery.Client, table: str) -> pd.DataFrame:
@@ -43,7 +43,7 @@ def _bq(client: bigquery.Client, table: str) -> pd.DataFrame:
 def _bq_mart_pop(client: bigquery.Client) -> pd.DataFrame:
     """Busca populacao do mart para usar no decay."""
     return client.query(
-        f"SELECT cod_ibge, populacao FROM `{TABLE_MART}`"
+        f"SELECT cod_ibge, populacao FROM `{PROJECT}.{DATASET_M}.mart_indicadores_municipios`"
     ).to_dataframe()
 
 
@@ -163,7 +163,24 @@ def _lliq(df: pd.DataFrame, df_pop: pd.DataFrame) -> pd.DataFrame:
 
 # ── BQ MERGE ──────────────────────────────────────────────────────────────────
 
-def _merge_bq(client: bigquery.Client, df: pd.DataFrame) -> None:
+def _merge_bq(client: bigquery.Client, df: pd.DataFrame, uf: str) -> None:
+    # Garante que a tabela existe antes do MERGE
+    schema = [
+        bigquery.SchemaField("cod_ibge", "INT64"),
+        bigquery.SchemaField("uf", "STRING"),
+        bigquery.SchemaField("eorcam_raw", "FLOAT64"),
+        bigquery.SchemaField("lliq_raw", "FLOAT64"),
+        bigquery.SchemaField("lliq_parcial", "BOOL"),
+        bigquery.SchemaField("dias_atraso", "INT64"),
+        bigquery.SchemaField("decay_fator", "FLOAT64"),
+        bigquery.SchemaField("dado_suspeito_lliq", "BOOL"),
+        bigquery.SchemaField("dado_defasado", "BOOL"),
+        bigquery.SchemaField("updated_at", "TIMESTAMP"),
+    ]
+    table = bigquery.Table(TABLE_TARGET, schema=schema)
+    client.create_table(table, exists_ok=True)
+
+    df["uf"] = uf
     tmp = f"{PROJECT}.{DATASET_M}._tmp_siconfi_post"
 
     job = client.load_table_from_dataframe(
@@ -173,9 +190,10 @@ def _merge_bq(client: bigquery.Client, df: pd.DataFrame) -> None:
     job.result()
 
     client.query(f"""
-    MERGE `{TABLE_MART}` T
+    MERGE `{TABLE_TARGET}` T
     USING `{tmp}` S ON T.cod_ibge = S.cod_ibge
     WHEN MATCHED THEN UPDATE SET
+        T.uf                  = S.uf,
         T.eorcam_raw          = S.eorcam_raw,
         T.lliq_raw            = S.lliq_raw,
         T.lliq_parcial        = S.lliq_parcial,
@@ -184,17 +202,25 @@ def _merge_bq(client: bigquery.Client, df: pd.DataFrame) -> None:
         T.dado_suspeito_lliq  = S.dado_suspeito_lliq,
         T.dado_defasado       = S.dado_defasado,
         T.updated_at          = CURRENT_TIMESTAMP()
+    WHEN NOT MATCHED THEN INSERT (
+        cod_ibge, uf, eorcam_raw, lliq_raw, lliq_parcial, dias_atraso,
+        decay_fator, dado_suspeito_lliq, dado_defasado, updated_at
+    ) VALUES (
+        S.cod_ibge, S.uf, S.eorcam_raw, S.lliq_raw, S.lliq_parcial, CAST(S.dias_atraso AS INT64),
+        S.decay_fator, S.dado_suspeito_lliq, S.dado_defasado, CURRENT_TIMESTAMP()
+    )
     """).result()
 
     client.delete_table(tmp, not_found_ok=True)
-    print(f"  ✅ MERGE concluído — {len(df)} linhas")
+    print(f"  ✅ MERGE concluído — {len(df)} linhas em int_siconfi_postprocessed")
 
 
 # ── entry point ───────────────────────────────────────────────────────────────
 
-def run() -> None:
+def run(uf: str = "PB") -> None:
     print("=" * 60)
     print(" siconfi_postprocessor — Bloco 7")
+    print(f" UF: {uf}")
     print("=" * 60)
 
     client = bigquery.Client(project=PROJECT)
@@ -218,12 +244,16 @@ def run() -> None:
     print(f"   {df_lliq_m['lliq_parcial'].sum()} com lliq_parcial (pré-RPNP)")
     print(f"   {df_lliq_m['dado_defasado'].sum()} com dado_defasado")
 
-    print("\n── Fazendo MERGE no mart...")
+    print("\n── Fazendo MERGE em int_siconfi_postprocessed...")
     merged = df_eorcam_m.merge(df_lliq_m, on="cod_ibge", how="outer")
-    _merge_bq(client, merged)
+    _merge_bq(client, merged, uf=uf)
 
     print("\n✅ siconfi_postprocessor concluído.")
 
 
 if __name__ == "__main__":
-    run()
+    import argparse
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--uf", default="PB")
+    args = parser.parse_args()
+    run(uf=args.uf)

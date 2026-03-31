@@ -21,10 +21,10 @@ load_dotenv()
 if key := os.getenv("GCP_SA_KEY_PATH"):
     os.environ["GOOGLE_APPLICATION_CREDENTIALS"] = key
 
-PROJECT    = "solvelicita"
-DATASET_I  = "intermediate"
-DATASET_M  = "mart"
-TABLE_MART = f"{PROJECT}.{DATASET_M}.mart_indicadores_municipios"
+PROJECT      = "solvelicita"
+DATASET_I    = "intermediate"
+DATASET_M    = "mart"
+TABLE_TARGET = f"{PROJECT}.{DATASET_I}.int_dca_postprocessed"
 
 def _bq(client: bigquery.Client, table: str) -> pd.DataFrame:
     return client.query(
@@ -46,7 +46,19 @@ def _calcular_autonomia(df: pd.DataFrame) -> pd.DataFrame:
     return agg
 
 
-def _merge_bq(client: bigquery.Client, df: pd.DataFrame) -> None:
+def _merge_bq(client: bigquery.Client, df: pd.DataFrame, uf: str) -> None:
+    # Garante que a tabela existe antes do MERGE
+    schema = [
+        bigquery.SchemaField("cod_ibge", "INT64"),
+        bigquery.SchemaField("uf", "STRING"),
+        bigquery.SchemaField("autonomia_media", "FLOAT64"),
+        bigquery.SchemaField("autonomia_critica", "BOOL"),
+        bigquery.SchemaField("updated_at", "TIMESTAMP"),
+    ]
+    table = bigquery.Table(TABLE_TARGET, schema=schema)
+    client.create_table(table, exists_ok=True)
+
+    df["uf"] = uf
     tmp = f"{PROJECT}.{DATASET_M}._tmp_dca_post"
 
     job = client.load_table_from_dataframe(
@@ -56,21 +68,28 @@ def _merge_bq(client: bigquery.Client, df: pd.DataFrame) -> None:
     job.result()
 
     merge_sql = f"""
-    MERGE `{TABLE_MART}` T
+    MERGE `{TABLE_TARGET}` T
     USING `{tmp}` S ON T.cod_ibge = S.cod_ibge
     WHEN MATCHED THEN UPDATE SET
+        T.uf                 = S.uf,
         T.autonomia_media    = S.autonomia_media,
         T.autonomia_critica  = S.autonomia_critica,
         T.updated_at         = CURRENT_TIMESTAMP()
+    WHEN NOT MATCHED THEN INSERT (
+        cod_ibge, uf, autonomia_media, autonomia_critica, updated_at
+    ) VALUES (
+        S.cod_ibge, S.uf, S.autonomia_media, S.autonomia_critica, CURRENT_TIMESTAMP()
+    )
     """
     client.query(merge_sql).result()
     client.delete_table(tmp, not_found_ok=True)
-    print(f"  ✅ MERGE concluído — {len(df)} municípios")
+    print(f"  ✅ MERGE concluído — {len(df)} municípios em int_dca_postprocessed")
 
 
-def run() -> None:
+def run(uf: str = "PB") -> None:
     print("=" * 60)
     print(" dca_postprocessor — Bloco 7")
+    print(f" UF: {uf}")
     print("=" * 60)
 
     client = bigquery.Client(project=PROJECT)
@@ -83,11 +102,15 @@ def run() -> None:
     print(f"   {df_m['autonomia_media'].notna().sum()} municípios com autonomia_media")
     print(f"   {df_m['autonomia_critica'].sum()} com autonomia_critica")
 
-    print("\n── Fazendo merge no mart...")
-    _merge_bq(client, df_m)
+    print("\n── Fazendo MERGE em int_dca_postprocessed...")
+    _merge_bq(client, df_m, uf=uf)
 
     print("\n✅ dca_postprocessor concluído.")
 
 
 if __name__ == "__main__":
-    run()
+    import argparse
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--uf", default="PB")
+    args = parser.parse_args()
+    run(uf=args.uf)

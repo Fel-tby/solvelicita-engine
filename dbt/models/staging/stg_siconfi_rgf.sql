@@ -17,5 +17,16 @@ renamed AS (
         CAST(valor          AS FLOAT64) AS valor,
         CAST(populacao      AS INT64)   AS populacao
     FROM source
+    QUALIFY ROW_NUMBER() OVER(
+        PARTITION BY 
+            CAST(cod_ibge AS INT64), 
+            CAST(exercicio AS INT64), 
+            periodo, 
+            anexo, 
+            cod_conta, 
+            coluna, 
+            esfera
+        ORDER BY uf
+    ) = 1
 )
 SELECT * FROM renamed

@@ -13,5 +13,9 @@ renamed AS (
         CAST(rec_disponivel AS FLOAT64) AS rec_disponivel,
         CAST(populacao      AS INT64)   AS populacao
     FROM source
+    QUALIFY ROW_NUMBER() OVER(
+        PARTITION BY CAST(cod_ibge AS INT64), CAST(ano AS INT64)
+        ORDER BY uf
+    ) = 1
 )
 SELECT * FROM renamed

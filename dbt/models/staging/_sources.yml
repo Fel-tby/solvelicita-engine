@@ -10,3 +10,4 @@ sources:
       - name: pncp
       - name: siconfi_rreo
       - name: siconfi_rgf
+      - name: dim_municipios

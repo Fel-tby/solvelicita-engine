@@ -170,3 +170,7 @@ data/outputs/outputs_backups/
 # Credenciais GCP — nunca no repositório
 gcp-credentials.json
 *.json.key
+
+# Instruções Internas Cline e Roadmap
+.clinerules/
+blocos.md

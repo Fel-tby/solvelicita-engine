@@ -83,49 +83,114 @@ def _carregar_csv(uf: str) -> pd.DataFrame:
 # Carga BigQuery (novo)
 
 def _carregar_bq(uf: str) -> pd.DataFrame:
-    from utils.bigquery_loader import read_mart
+    from utils.bigquery_loader import read_mart, read_intermediate
 
     pesos = cfg_module.get_pesos(uf)
 
     print(f"  Lendo mart.mart_indicadores_municipios (uf={uf})...")
     df = read_mart("mart_indicadores_municipios", uf=uf)
     df["cod_ibge"] = df["cod_ibge"].astype(str).str.zfill(7)
-    print(f"  {len(df)} municípios carregados")
+
+    # Limpa colunas que possam existir por herança (caso dbt não tenha rodado limpo)
+    # Evita sufixos _x e _y no merge.
+    legacy_cols = [
+        "eorcam_raw", "lliq_raw", "lliq_parcial", "dias_atraso", "decay_fator",
+        "dado_suspeito_lliq", "dado_defasado", "autonomia_media", "autonomia_critica",
+        "n_licitacoes", "valor_homologado_total", "n_dispensa", "valor_hom_dispensa",
+        "pct_dispensa", "ano_ultima_licitacao", "alerta_dispensa"
+    ]
+    df = df.drop(columns=[c for c in legacy_cols if c in df.columns])
+
+    # Merge PNCP
+    print(f"  Lendo mart_pncp_municipios (uf={uf})...")
+    try:
+        df_pncp = read_mart("mart_pncp_municipios", uf=uf)
+        if not df_pncp.empty:
+            df_pncp["cod_ibge"] = df_pncp["cod_ibge"].astype(str).str.zfill(7)
+            pncp_cols = ["cod_ibge", "n_licitacoes", "valor_homologado_total", "n_dispensa", "valor_hom_dispensa", "pct_dispensa", "ano_ultima_licitacao", "alerta_dispensa"]
+            df_pncp = df_pncp[[c for c in pncp_cols if c in df_pncp.columns]]
+            df = df.merge(df_pncp, on="cod_ibge", how="left")
+    except Exception as e:
+        print(f"  ⚠️ Erro ao carregar mart_pncp_municipios: {e}")
+
+    # Merge Postprocessors (SICONFI e DCA) que agora vivem em tabelas separadas
+    print(f"  Lendo int_siconfi_postprocessed e int_dca_postprocessed (uf={uf})...")
+    try:
+        df_siconfi = read_intermediate("int_siconfi_postprocessed", uf=uf)
+        if not df_siconfi.empty:
+            df_siconfi["cod_ibge"] = df_siconfi["cod_ibge"].astype(str).str.zfill(7)
+            siconfi_cols = ["cod_ibge", "eorcam_raw", "lliq_raw", "lliq_parcial", "dias_atraso", "decay_fator", "dado_suspeito_lliq", "dado_defasado"]
+            df_siconfi = df_siconfi[[c for c in siconfi_cols if c in df_siconfi.columns]]
+            df = df.merge(df_siconfi, on="cod_ibge", how="left")
+    except Exception as e:
+        print(f"  ⚠️ Erro ao carregar int_siconfi_postprocessed: {e}")
+
+    try:
+        df_dca = read_intermediate("int_dca_postprocessed", uf=uf)
+        if not df_dca.empty:
+            df_dca["cod_ibge"] = df_dca["cod_ibge"].astype(str).str.zfill(7)
+            dca_cols = ["cod_ibge", "autonomia_media", "autonomia_critica"]
+            df_dca = df_dca[[c for c in dca_cols if c in df_dca.columns]]
+            df = df.merge(df_dca, on="cod_ibge", how="left")
+    except Exception as e:
+        print(f"  ⚠️ Erro ao carregar int_dca_postprocessed: {e}")
+
+    print(f"  {len(df)} municípios base carregados e cruzados")
 
     # Tipos — BQ retorna correto mas colunas com NULL viram object no pandas
     for col in ["eorcam_raw", "lliq_raw", "autonomia_media",
                 "decay_fator", "ccauc", "dias_atraso"]:
-        df[col] = pd.to_numeric(df[col], errors="coerce")
+        if col in df.columns:
+            df[col] = pd.to_numeric(df[col], errors="coerce")
 
     for col in ["anos_entregues", "n_anos_cronicos"]:
-        df[col] = pd.to_numeric(df[col], errors="coerce").fillna(0).astype(int)
+        if col in df.columns:
+            df[col] = pd.to_numeric(df[col], errors="coerce").fillna(0).astype(int)
 
     for col in ["lliq_parcial", "dado_suspeito_lliq", "dado_defasado", "autonomia_critica"]:
         if col in df.columns:
             df[col] = df[col].map(lambda v: bool(v) if pd.notnull(v) else False)
 
     # Norms — to_numeric garante float64 mesmo quando pontuar_* retorna None
-    df["eorcam_norm"]    = pd.to_numeric(df["eorcam_raw"].apply(pontuar_eorcam),    errors="coerce")
-    df["contrib_eorcam"] = (pesos["eorcam"] * df["eorcam_norm"].fillna(0)).round(4)
+    if "eorcam_raw" in df.columns:
+        df["eorcam_norm"]    = pd.to_numeric(df["eorcam_raw"].apply(pontuar_eorcam),    errors="coerce")
+        df["contrib_eorcam"] = (pesos["eorcam"] * df["eorcam_norm"].fillna(0)).round(4)
+    else:
+        df["contrib_eorcam"] = 0
 
-    df["lliq_norm"]    = pd.to_numeric(df["lliq_raw"].apply(pontuar_lliq),        errors="coerce")
-    df["contrib_lliq"] = (
-        pesos["lliq"] * df["lliq_norm"].fillna(0) * df["decay_fator"].fillna(1.0)
-    ).round(4)
+    if "lliq_raw" in df.columns:
+        df["lliq_norm"]    = pd.to_numeric(df["lliq_raw"].apply(pontuar_lliq),        errors="coerce")
+        df["contrib_lliq"] = (
+            pesos["lliq"] * df["lliq_norm"].fillna(0) * df.get("decay_fator", pd.Series(1.0, index=df.index)).fillna(1.0)
+        ).round(4)
+    else:
+        df["contrib_lliq"] = 0
 
-    df["qsiconfi"]         = df["anos_entregues"] / N_ANOS
-    df["contrib_qsiconfi"] = (pesos["qsiconfi"] * df["qsiconfi"]).round(4)
+    if "anos_entregues" in df.columns:
+        df["qsiconfi"]         = df["anos_entregues"] / N_ANOS
+        df["contrib_qsiconfi"] = (pesos["qsiconfi"] * df["qsiconfi"]).round(4)
+    else:
+        df["contrib_qsiconfi"] = 0
 
-    df["contrib_ccauc"] = (pesos["ccauc"] * (1 - df["ccauc"].fillna(1.0))).round(4)
+    if "ccauc" in df.columns:
+        df["contrib_ccauc"] = (pesos["ccauc"] * (1 - df["ccauc"].fillna(1.0))).round(4)
+    else:
+        df["contrib_ccauc"] = 0
 
-    df["autonomia_norm"] = pd.to_numeric(
-        df.apply(lambda r: pontuar_autonomia(r["autonomia_media"], r["populacao"], uf), axis=1),
-        errors="coerce"
-    )
-    df["contrib_autonomia"] = (pesos["autonomia"] * df["autonomia_norm"].fillna(0)).round(4)
+    if "autonomia_media" in df.columns:
+        df["autonomia_norm"] = pd.to_numeric(
+            df.apply(lambda r: pontuar_autonomia(r["autonomia_media"], r["populacao"], uf), axis=1),
+            errors="coerce"
+        )
+        df["contrib_autonomia"] = (pesos["autonomia"] * df["autonomia_norm"].fillna(0)).round(4)
+    else:
+        df["contrib_autonomia"] = 0
 
-    df["rproc_norm"]    = pd.to_numeric(df["n_anos_cronicos"].apply(pontuar_rproc_cronico), errors="coerce")
-    df["contrib_rproc"] = (pesos["rproc"] * df["rproc_norm"].fillna(0)).round(4)
+    if "n_anos_cronicos" in df.columns:
+        df["rproc_norm"]    = pd.to_numeric(df["n_anos_cronicos"].apply(pontuar_rproc_cronico), errors="coerce")
+        df["contrib_rproc"] = (pesos["rproc"] * df["rproc_norm"].fillna(0)).round(4)
+    else:
+        df["contrib_rproc"] = 0
 
     return df
 
@@ -150,11 +215,20 @@ def run(uf: str = "PB", source: str = "csv") -> pd.DataFrame:
         df["contrib_lliq"] + df["contrib_eorcam"] + df["contrib_qsiconfi"] +
         df["contrib_ccauc"] + df["contrib_autonomia"] + df["contrib_rproc"]
     )
-    df["pen_lliq_parcial"] = df["lliq_parcial"].apply(lambda x: -5.0 if x else 0.0)
+    
+    if "lliq_parcial" in df.columns:
+        df["pen_lliq_parcial"] = df["lliq_parcial"].apply(lambda x: -5.0 if x else 0.0)
+    else:
+        df["pen_lliq_parcial"] = 0.0
+        
     df["pen_situacional"]  = df[["pen_lliq_parcial"]].sum(axis=1).clip(lower=-10.0)
     df["score_bruto"]      = (df["score_base"] + df["pen_situacional"]).clip(lower=0)
     df["score"]            = df["score_bruto"].round(1)
-    df.loc[df["eorcam_raw"].isna(), "score"] = None
+    
+    if "eorcam_raw" in df.columns:
+        df.loc[df["eorcam_raw"].isna(), "score"] = None
+    else:
+        df["score"] = None
 
     df["dado_suspeito"] = df.get("dado_suspeito_lliq", pd.Series(False, index=df.index)).fillna(False)
     if "autonomia_critica" not in df.columns:
@@ -188,6 +262,9 @@ def run(uf: str = "PB", source: str = "csv") -> pd.DataFrame:
         "dias_atraso", "decay_fator",
         "dado_suspeito", "dado_suspeito_lliq", "dado_defasado",
         "lliq_parcial", "autonomia_critica",
+        "n_licitacoes", "valor_homologado_total", "n_dispensa",
+        "valor_hom_dispensa", "pct_dispensa", "ano_ultima_licitacao",
+        "alerta_dispensa",
     ]
     df_out = df[[c for c in OUT_COLS if c in df.columns]].copy()
     df_out["_ordem"] = df_out["classificacao"].map(ORDEM_SORT)
@@ -198,7 +275,7 @@ def run(uf: str = "PB", source: str = "csv") -> pd.DataFrame:
     )
 
     paths   = get_paths(uf)
-    outfile = paths["outputs"] / f"score_municipios_{uf.lower()}.csv"
+    outfile = paths["outputs"] / f"score_municipios_{uf.lower()}_pncp.csv"
     df_out.to_csv(outfile, index=False, encoding="utf-8-sig")
 
     print(f"\n✅ Score calculado : {df_out['score'].notna().sum()} municípios")

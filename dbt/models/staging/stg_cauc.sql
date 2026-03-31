@@ -38,8 +38,19 @@ renamed AS (
         req_siconfi_pcasp,
         req_siconfi_dcasp,
         req_siconfi_mcasp,
-        PARSE_DATE('%Y-%m-%d', data_pesquisa) AS data_pesquisa,
-        PARSE_DATE('%Y-%m-%d', data_coleta)   AS data_coleta
+        COALESCE(
+            SAFE.PARSE_DATE('%Y-%m-%d', SUBSTR(data_pesquisa, 1, 10)),
+            SAFE.PARSE_DATE('%d/%m/%Y', SUBSTR(data_pesquisa, 1, 10))
+        ) AS data_pesquisa,
+        COALESCE(
+            SAFE.PARSE_DATE('%Y-%m-%d', SUBSTR(data_coleta, 1, 10)),
+            SAFE.PARSE_DATE('%d/%m/%Y', SUBSTR(data_coleta, 1, 10))
+        ) AS data_coleta
     FROM source
+    -- Garante que só o snapshot mais recente por município passe do staging
+    QUALIFY ROW_NUMBER() OVER(
+        PARTITION BY CAST(cod_ibge AS INT64) 
+        ORDER BY data_coleta DESC, data_pesquisa DESC
+    ) = 1
 )
 SELECT * FROM renamed
