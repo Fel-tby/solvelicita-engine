@@ -1,0 +1,29 @@
+col_stg,codigo,descricao,gravidade
+req_previdenciaria_rpps,1.1,Regularidade Previdenciária (RPPS),LEVE
+req_fiscal_rfb,1.2,Regularidade Fiscal (RFB),GRAVE
+req_pgfn,1.3,Regularidade PGFN,GRAVE
+req_fgts,1.4,Regularidade FGTS,MODERADA
+req_trabalhista_tst,1.5,Regularidade Trabalhista (TST),MODERADA
+req_lrf_pessoal_exec,2.1.1,LRF - Limite Pessoal Executivo,GRAVE
+req_lrf_pessoal_leg,2.1.2,LRF - Limite Pessoal Legislativo,MODERADA
+req_siops,3.1.1,SIOPS (Saúde),MODERADA
+req_siops_demo,3.1.2,SIOPS Demonstrativo,LEVE
+req_siope,3.2.1,SIOPE (Educação),MODERADA
+req_siope_demo,3.2.2,SIOPE Demonstrativo,LEVE
+req_siope_compl,3.2.3,SIOPE Complementar,LEVE
+req_siope_obs,3.2.4,SIOPE Observações,LEVE
+req_siga,3.3,SIGA (Alimentação Escolar),LEVE
+req_siconv_pc,3.4.1,SICONV/TRANSFEREGOV Prestação de Contas,MODERADA
+req_siconv_debitos,3.4.2,SICONV/TRANSFEREGOV Débitos,LEVE
+req_cadin,3.5,CADIN,GRAVE
+req_tcu,3.6,Adimplência TCU,GRAVE
+req_cgu,3.7,Adimplência CGU,GRAVE
+req_sistn_divida,4.1,SISTN (Dívida Consolidada),GRAVE
+req_sistn_garantias,4.2,SISTN (Garantias),MODERADA
+req_siconfi_rreo,5.1,SICONFI RREO,LEVE
+req_siconfi_rgf,5.2,SICONFI RGF,LEVE
+req_siconfi_balanco,5.3,SICONFI Balanço Anual,LEVE
+req_siconfi_dca,5.4,SICONFI DCA,LEVE
+req_siconfi_pcasp,5.5,SICONFI PCASP,LEVE
+req_siconfi_dcasp,5.6,SICONFI DCASP,LEVE
+req_siconfi_mcasp,5.7,SICONFI MCASP,LEVE
