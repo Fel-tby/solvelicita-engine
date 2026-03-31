@@ -4,14 +4,15 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 import pandas as pd
 from datetime import date
+from scorers import config as cfg_module
 from scorers.config import (
-    PESOS, ANOS_REF,
+    ANOS_REF,
     LIMIAR_LLIQ_SUSPEITO,
-    JANELA_RGF_BIMESTRAL, JANELA_RGF_SEMESTRAL,
+    JANELA_RGF_BIMESTRAL,
+    JANELA_RGF_SEMESTRAL,
     FIM_PERIODO_MES,
 )
 
-# Calculado no momento da execução, não como constante de módulo
 HOJE = date.today()
 
 
@@ -20,21 +21,11 @@ def pontuar_lliq(x: float):
     DCL pós-RP excl. RPPS / Receita Realizada → [0, 1].
     Valores < −0.50 são capados antes do cálculo (sinalizados separadamente).
 
-    Curva v7.0 — âncoras exatas:
-      ≥  0.35       → 1.00
-       0.10 – 0.35  → linear 0.60 → 1.00   [ (x−0.10)/0.25 × 0.40 + 0.60 ]
-       0.00 – 0.10  → linear 0.35 → 0.60   [ (x/0.10)      × 0.25 + 0.35 ]
-      −0.50 – 0.00  → linear 0.00 → 0.35   [ (x+0.50)/0.50 × 0.35        ]
-
-    Motivação da mudança em relação à v6.2:
-      - Teto deslocado de 0.20 para 0.35: apenas 8% dos municípios atingem
-        norm=1.0 (era 24%), eliminando compressão da escala no intervalo mais
-        informativo (0.05 – 0.30, que concentra 74% da distribuição real PB).
-      - Piso em lliq=0 reduzido de 0.50 para 0.35: score neutro (caixa zero)
-        deixa de receber metade dos pontos máximos.
-      - Negativo linear em vez de quadrático: distribui penalidade de forma
-        uniforme; a curva quadrática anterior suavizava excessivamente a faixa
-        −0.10 a 0.00 (Δ norm v6.2→v7.0 nessa faixa: −0.09).
+    Curva v7.0:
+    ≥ 0.35        → 1.00
+    0.10 – 0.35   → linear 0.60 → 1.00
+    0.00 – 0.10   → linear 0.35 → 0.60
+    −0.50 – 0.00  → linear 0.00 → 0.35
     """
     if pd.isna(x):
         return None
@@ -79,7 +70,7 @@ def _decay(dias: int, populacao: int) -> float:
     return round(max(0.0, 1.0 - (dias - janela) / 365.0), 4)
 
 
-def calcular(df_si: pd.DataFrame, df_mu: pd.DataFrame) -> pd.DataFrame:
+def calcular(df_si: pd.DataFrame, df_mu: pd.DataFrame, uf: str = "PB") -> pd.DataFrame:
     """
     Seleciona o RGF Anexo 05 mais recente por município.
     Prioridade Q > S quando ambas periodicidades existem no mesmo exercício.
@@ -92,6 +83,8 @@ def calcular(df_si: pd.DataFrame, df_mu: pd.DataFrame) -> pd.DataFrame:
                          dias_atraso, decay_fator, dado_defasado,
                          dado_suspeito_lliq, contrib_lliq]
     """
+    pesos = cfg_module.get_pesos(uf)
+
     df_base = (
         df_si[df_si["ano"].isin(ANOS_REF) & df_si["lliq"].notna()]
         .assign(
@@ -107,16 +100,16 @@ def calcular(df_si: pd.DataFrame, df_mu: pd.DataFrame) -> pd.DataFrame:
         .reset_index()
         [["cod_ibge", "lliq", "ano", "periodo_rgf", "periodicidade_rgf", "lliq_parcial"]]
         .rename(columns={
-            "lliq"            : "lliq_raw",
-            "ano"             : "lliq_ano",
-            "periodo_rgf"     : "lliq_periodo",
+            "lliq"             : "lliq_raw",
+            "ano"              : "lliq_ano",
+            "periodo_rgf"      : "lliq_periodo",
             "periodicidade_rgf": "lliq_periodicidade",
         })
     )
 
     df_base = df_base.merge(df_mu[["cod_ibge", "populacao"]], on="cod_ibge", how="left")
 
-    df_base["lliq_norm"]        = df_base["lliq_raw"].apply(pontuar_lliq)
+    df_base["lliq_norm"]         = df_base["lliq_raw"].apply(pontuar_lliq)
     df_base["dado_suspeito_lliq"] = (
         df_base["lliq_raw"].notna() & (df_base["lliq_raw"] < LIMIAR_LLIQ_SUSPEITO)
     )
@@ -125,7 +118,7 @@ def calcular(df_si: pd.DataFrame, df_mu: pd.DataFrame) -> pd.DataFrame:
         if pd.notnull(r.get("lliq_ano")) else 999,
         axis=1,
     )
-    df_base["decay_fator"] = df_base.apply(
+    df_base["decay_fator"]  = df_base.apply(
         lambda r: _decay(r["dias_atraso"], r["populacao"]), axis=1
     )
     df_base["dado_defasado"] = df_base.apply(
@@ -135,7 +128,7 @@ def calcular(df_si: pd.DataFrame, df_mu: pd.DataFrame) -> pd.DataFrame:
         axis=1,
     )
     df_base["contrib_lliq"] = (
-        (PESOS["lliq"] * df_base["lliq_norm"].fillna(0)) * df_base["decay_fator"]
+        pesos["lliq"] * df_base["lliq_norm"].fillna(0) * df_base["decay_fator"]
     ).round(4)
 
     return df_base.drop(columns=["populacao"])

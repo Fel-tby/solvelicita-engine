@@ -1,25 +1,24 @@
 """
-pipeline.py — Orquestrador central do SolveLicita.
+pipeline.py — Orquestrador central do SolveLicita v9.0
 Localização: raiz do projeto (ao lado de README.md).
 
-Executa o pipeline completo ou etapas individuais, em modo full ou incremental.
+Bloco 9: processors legados aposentados, etapa app removida.
+Caminho canônico: BigQuery → postprocessors → solvency → pncp_agregador → Supabase.
 
 Uso:
     python pipeline.py                                            # interativo
-    python pipeline.py --uf CE                                   # outro estado, interativo
-    python pipeline.py --mode full                               # força full, todas as etapas
-    python pipeline.py --mode incremental                        # força incremental, todas as etapas
+    python pipeline.py --uf CE                                   # outro estado
+    python pipeline.py --mode full                               # força full
+    python pipeline.py --mode incremental                        # força incremental
     python pipeline.py --steps process,score                     # pula coleta
-    python pipeline.py --steps app                               # só regera o GeoJSON
-    python pipeline.py --steps score,sync                        # score + envia pro Supabase
+    python pipeline.py --steps score,sync                        # score + Supabase
     python pipeline.py --uf CE --mode incremental --steps collect,score,sync
 
 Etapas disponíveis:
     collect — coleta bruta (municipios, cauc, siconfi, dca, pncp)
-    process — processamento analítico (todos os processors)
-    score   — cálculo do score (solvency.py + pncp_agregador.py)
-    app     — gera GeoJSON para o dashboard (prep_data.py)
-    sync    — sincroniza dados com o Supabase
+    process — postprocessors BigQuery (siconfi_postprocessor, dca_postprocessor)
+    score   — cálculo do score (solvency.py --source bigquery + pncp_agregador.py)
+    sync    — sincroniza com o Supabase
 """
 
 import sys
@@ -31,26 +30,17 @@ sys.path.insert(0, str(ROOT))
 sys.path.insert(0, str(ROOT / "src"))
 
 from src.collectors import municipios, cauc, siconfi, dca, pncp
-from src.processors import cauc_processor, siconfi_processor, dca_processor
-from src.processors import pncp_processor, pncp_agregador
+from src.processors import siconfi_postprocessor, dca_postprocessor, pncp_agregador
 from src.engine import solvency
 from src.utils.paths import get_paths
 from src.utils.supabase_sync import run as supabase_sync
 
-import importlib.util as _ilu
 
-def _importar_prep_data():
-    spec = _ilu.spec_from_file_location("prep_data", ROOT / "app" / "prep_data.py")
-    mod  = _ilu.module_from_spec(spec)
-    spec.loader.exec_module(mod)
-    return mod
+ETAPAS_VALIDAS = {"collect", "process", "score", "sync"}
+ETAPAS_ORDEM   = ["collect", "process", "score", "sync"]
 
 
-ETAPAS_VALIDAS = {"collect", "process", "score", "app", "sync"}
-ETAPAS_ORDEM   = ["collect", "process", "score", "app", "sync"]
-
-
-# UI de seleção
+# ── UI de seleção ──────────────────────────────────────────────────────────────
 
 def selecionar_uf() -> str:
     print()
@@ -62,7 +52,7 @@ def selecionar_uf() -> str:
 def selecionar_modo() -> str:
     print()
     print("╔══════════════════════════════════════════════════════╗")
-    print("║         SolveLicita — Pipeline de Dados             ║")
+    print("║         SolveLicita — Pipeline de Dados  v9.0      ║")
     print("╠══════════════════════════════════════════════════════╣")
     print("║                                                      ║")
     print("║  [1] Full — histórico completo                      ║")
@@ -88,34 +78,32 @@ def selecionar_modo() -> str:
 def selecionar_etapas() -> set[str]:
     print()
     print("  Etapas a executar:")
-    print("  [1] Todas (collect → process → score → app → sync)")
-    print("  [2] Todas sem sync (collect → process → score → app)")
-    print("  [3] process + score + app (dados já coletados)")
-    print("  [4] score + app (dados já processados)")
-    print("  [5] Apenas app (só regera o GeoJSON)")
-    print("  [6] Apenas sync (só envia para o Supabase)")
-    print("  [7] Personalizado (digitar etapas)")
+    print("  [1] Todas (collect → process → score → sync)")
+    print("  [2] Todas sem sync (collect → process → score)")
+    print("  [3] process + score + sync (dados já coletados)")
+    print("  [4] score + sync (postprocessors já rodaram)")
+    print("  [5] Apenas sync (score já calculado)")
+    print("  [6] Personalizado (digitar etapas)")
     print()
     while True:
-        escolha = input("  Etapas [1/2/3/4/5/6/7]: ").strip()
-        if escolha == "1": return {"collect", "process", "score", "app", "sync"}
-        if escolha == "2": return {"collect", "process", "score", "app"}
-        if escolha == "3": return {"process", "score", "app"}
-        if escolha == "4": return {"score", "app"}
-        if escolha == "5": return {"app"}
-        if escolha == "6": return {"sync"}
-        if escolha == "7":
-            raw      = input("  Digite etapas (collect,process,score,app,sync): ").strip()
-            etapas   = {e.strip() for e in raw.split(",")}
+        escolha = input("  Etapas [1/2/3/4/5/6]: ").strip()
+        if escolha == "1": return {"collect", "process", "score", "sync"}
+        if escolha == "2": return {"collect", "process", "score"}
+        if escolha == "3": return {"process", "score", "sync"}
+        if escolha == "4": return {"score", "sync"}
+        if escolha == "5": return {"sync"}
+        if escolha == "6":
+            raw       = input("  Digite etapas (collect,process,score,sync): ").strip()
+            etapas    = {e.strip() for e in raw.split(",")}
             invalidas = etapas - ETAPAS_VALIDAS
             if invalidas:
-                print(f"  Etapas inválidas: {invalidas}. Use: collect, process, score, app, sync.")
+                print(f"  Etapas inválidas: {invalidas}. Use: collect, process, score, sync.")
                 continue
             return etapas
         print("  Opção inválida.")
 
 
-# Etapas do pipeline
+# ── Etapas do pipeline ─────────────────────────────────────────────────────────
 
 def etapa_collect(mode: str, uf: str) -> None:
     print("\n" + "═" * 55)
@@ -140,68 +128,51 @@ def etapa_collect(mode: str, uf: str) -> None:
 
 def etapa_process(uf: str) -> None:
     """
-    Processors legados — ainda sem parâmetro uf.
-    Receberão uf no Bloco 8, quando forem substituídos pelos
-    postprocessors + dbt. O parâmetro uf é recebido aqui para
-    manter a assinatura consistente desde já.
+    Postprocessors BigQuery — preenchem as colunas NULL deixadas pelo dbt.
+    siconfi_postprocessor: eorcam_raw, lliq_raw, lliq_parcial, dias_atraso,
+                           decay_fator, dado_suspeito_lliq, dado_defasado.
+    dca_postprocessor:     autonomia_media, autonomia_critica.
     """
     print("\n" + "═" * 55)
-    print(f"  ETAPA: PROCESSAMENTO — {uf}")
+    print(f"  ETAPA: POSTPROCESSORS BigQuery — {uf}")
     print("═" * 55)
 
-    print("\n[1/4] CAUC processor...")
-    cauc_processor.run()
+    print("\n[1/2] SICONFI postprocessor...")
+    siconfi_postprocessor.run(uf=uf)
 
-    print("\n[2/4] SICONFI processor...")
-    siconfi_processor.run()
-
-    print("\n[3/4] DCA processor...")
-    dca_processor.run()
-
-    print("\n[4/4] PNCP processor...")
-    pncp_processor.run()
+    print("\n[2/2] DCA postprocessor...")
+    dca_postprocessor.run(uf=uf)
 
 
 def etapa_score(uf: str) -> None:
     """
-    Engine legado — ainda sem parâmetro uf.
-    Receberá uf no Bloco 8, junto com a migração para leitura do BigQuery.
+    Lê mart_indicadores_municipios (BigQuery), calcula o score completo
+    e enriquece com dados PNCP dos últimos 12 meses.
     """
     print("\n" + "═" * 55)
     print(f"  ETAPA: SCORE — {uf}")
     print("═" * 55)
 
-    print("\n[1/2] Solvency engine...")
-    solvency.run()
+    print("\n[1/2] Solvency engine (source=bigquery)...")
+    solvency.run(uf=uf, source="bigquery")
 
-    print("\n[2/2] PNCP agregador...")
-    pncp_agregador.run()
-
-
-def etapa_app(uf: str) -> None:
-    print("\n" + "═" * 55)
-    print(f"  ETAPA: APP — GeoJSON — {uf}")
-    print("═" * 55)
-
-    print("\n[1/1] Gerando pb_score.geojson...")
-    prep_data = _importar_prep_data()
-    prep_data.run()
+    print("\n[2/2] PNCP agregador (últimos 12 meses)...")
+    pncp_agregador.run(uf=uf)
 
 
 def etapa_sync(uf: str) -> None:
     """
-    supabase_sync ainda sem parâmetro uf.
-    Receberá uf no Bloco 8, junto com a migração da tabela Supabase.
+    Lê outputs/{UF}/score_municipios_{u}_pncp.csv e faz upsert no Supabase.
     """
     print("\n" + "═" * 55)
     print(f"  ETAPA: SYNC — Supabase — {uf}")
     print("═" * 55)
 
     print("\n[1/1] Sincronizando com Supabase...")
-    supabase_sync()
+    supabase_sync(uf=uf)
 
 
-# Main ─────────────────────────────────────────────────────────────────────────
+# ── Main ───────────────────────────────────────────────────────────────────────
 
 def main() -> None:
     args = sys.argv[1:]
@@ -232,7 +203,7 @@ def main() -> None:
         etapas = {e.strip() for e in raw.split(",")}
         invalidas = etapas - ETAPAS_VALIDAS
         if invalidas:
-            print(f"  Erro: etapas inválidas: {invalidas}. Use: collect, process, score, app, sync.")
+            print(f"  Erro: etapas inválidas: {invalidas}. Use: collect, process, score, sync.")
             sys.exit(1)
     else:
         steps_inline = next((a.split("=", 1)[1] for a in args if a.startswith("--steps=")), None)
@@ -253,7 +224,7 @@ def main() -> None:
         if etapas is None or "collect" in etapas:
             mode = selecionar_modo()
         else:
-            mode = "incremental"  # neutro — não usado em process/score/app/sync
+            mode = "incremental"
 
     if etapas is None:
         etapas = selecionar_etapas()
@@ -284,9 +255,6 @@ def main() -> None:
 
         if "score" in etapas:
             etapa_score(uf)
-
-        if "app" in etapas:
-            etapa_app(uf)
 
         if "sync" in etapas:
             etapa_sync(uf)

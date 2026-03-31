@@ -1,6 +1,6 @@
 """
 autonomia_scorer.py — Pontuação de Autonomia Fiscal (peso 10%)
-Fonte: FINBRA/DCA (dca_indicadores_pb.csv)
+Fonte: FINBRA/DCA
 
 Nota: scaixa foi incorporado ao Lliq via RGF Anexo 05 — não calculado aqui.
 """
@@ -10,17 +10,9 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 import pandas as pd
 import numpy as np
-from utils.paths import PROCESSED
-from scorers.config import PESOS, LIMIAR_AUTONOMIA_CRIT
-
-# Parâmetros sigmoid calibrados com dados 2020–2024 da PB.
-# k = 2 / IQR empírico por grupo. Rever anualmente após nova coleta DCA.
-SIGMOID_PARAMS = {
-    "micro"   : (0.0296, 98.6),
-    "pequeno" : (0.0276, 77.9),
-    "médio"   : (0.0318, 96.2),
-    "grande"  : (0.0228, 306.2),
-}
+from utils.paths import get_paths
+from scorers import config as cfg_module
+from scorers.config import LIMIAR_AUTONOMIA_CRIT
 
 
 def _porte(pop: int) -> str:
@@ -30,34 +22,38 @@ def _porte(pop: int) -> str:
     return "grande"
 
 
-def pontuar_autonomia(x, pop: int):
+def pontuar_autonomia(x, pop: int, uf: str = "PB"):
     """
     Receita tributária própria / Receita Corrente Total → [0.0, 1.0].
-    Sigmoid regionalizada por porte — calibrada para o perfil real da PB.
+    Sigmoid regionalizada por porte — parâmetros lidos do config por UF.
     """
     if pd.isna(x) or pd.isna(pop):
         return None
-    mu, k = SIGMOID_PARAMS[_porte(int(pop))]
+    mu, k = cfg_module.get_sigmoid_autonomia(uf, _porte(int(pop)))
     return round(float(1.0 / (1.0 + np.exp(-k * (x - mu)))), 4)
 
 
-def carregar_dca(municipios: pd.DataFrame) -> pd.DataFrame:
+def carregar_dca(municipios: pd.DataFrame, uf: str = "PB") -> pd.DataFrame:
     """
-    Carrega dca_indicadores_pb.csv e calcula contribuição de Autonomia.
+    Carrega dca_indicadores_{uf}.csv e calcula contribuição de Autonomia.
 
     Parâmetros
     ----------
     municipios : DataFrame mestre com colunas [cod_ibge, ente, populacao]
+    uf         : sigla do estado
 
     Retorna
     -------
     DataFrame com colunas:
-      cod_ibge, autonomia_media, autonomia_norm, contrib_autonomia
+        cod_ibge, autonomia_media, autonomia_norm, contrib_autonomia
     """
-    caminho = PROCESSED / "dca_indicadores_pb.csv"
+    pesos   = cfg_module.get_pesos(uf)
+    paths   = get_paths(uf)
+    caminho = paths["processed"] / f"dca_indicadores_{uf.lower()}.csv"
+
     if not caminho.exists():
         raise FileNotFoundError(
-            f"dca_indicadores_pb.csv não encontrado em {PROCESSED}. "
+            f"dca_indicadores_{uf.lower()}.csv não encontrado em {paths['processed']}.\n"
             "Execute src/collectors/dca.py primeiro."
         )
 
@@ -65,8 +61,8 @@ def carregar_dca(municipios: pd.DataFrame) -> pd.DataFrame:
     dca = dca.merge(municipios[["cod_ibge", "populacao"]], on="cod_ibge", how="left")
 
     dca["autonomia_norm"]    = dca.apply(
-        lambda r: pontuar_autonomia(r["autonomia_media"], r["populacao"]), axis=1
+        lambda r: pontuar_autonomia(r["autonomia_media"], r["populacao"], uf), axis=1
     )
-    dca["contrib_autonomia"] = (PESOS["autonomia"] * dca["autonomia_norm"]).round(4)
+    dca["contrib_autonomia"] = (pesos["autonomia"] * dca["autonomia_norm"]).round(4)
 
     return dca[["cod_ibge", "autonomia_media", "autonomia_norm", "contrib_autonomia"]]

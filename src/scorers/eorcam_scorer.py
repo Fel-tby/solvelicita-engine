@@ -3,17 +3,18 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 import pandas as pd
-from scorers.config import PESOS, ANOS_REF, PESOS_ANO
+from scorers import config as cfg_module
+from scorers.config import ANOS_REF, PESOS_ANO
 
 
 def pontuar_eorcam(x: float):
     """
     Receita realizada / prevista (%). Zona ótima: 90–105%.
-    > 120%      → 0.5  (arrecadação anômala, não sustentável)
-    105 – 120   → decaimento linear 1.0→0.5
-    90 – 105    → 1.0  (máximo)
-    70 – 90     → proporcional 0.0→1.0
-    < 70        → 0.0  (colapso de arrecadação)
+    > 120% → 0.5 (arrecadação anômala, não sustentável)
+    105 – 120 → decaimento linear 1.0→0.5
+    90 – 105  → 1.0 (máximo)
+    70 – 90   → proporcional 0.0→1.0
+    < 70      → 0.0 (colapso de arrecadação)
     """
     if pd.isna(x):
         return None
@@ -24,7 +25,7 @@ def pontuar_eorcam(x: float):
     return 0.0
 
 
-def calcular(df_si: pd.DataFrame) -> pd.DataFrame:
+def calcular(df_si: pd.DataFrame, uf: str = "PB") -> pd.DataFrame:
     """
     Média ponderada por recência (PESOS_ANO). 2020 tem peso 0 —
     serve como reserva histórica mas não entra na média ponderada.
@@ -32,6 +33,8 @@ def calcular(df_si: pd.DataFrame) -> pd.DataFrame:
     Entrada : df_si com colunas [cod_ibge, ano, entregou_rreo, eorcam]
     Saída   : DataFrame [cod_ibge, eorcam_raw, eorcam_norm, contrib_eorcam]
     """
+    pesos = cfg_module.get_pesos(uf)
+
     df_eo = df_si[
         df_si["ano"].isin(ANOS_REF) &
         df_si["entregou_rreo"] &
@@ -53,5 +56,5 @@ def calcular(df_si: pd.DataFrame) -> pd.DataFrame:
     )
 
     df_result["eorcam_norm"]    = df_result["eorcam_raw"].apply(pontuar_eorcam)
-    df_result["contrib_eorcam"] = (PESOS["eorcam"] * df_result["eorcam_norm"].fillna(0)).round(4)
+    df_result["contrib_eorcam"] = (pesos["eorcam"] * df_result["eorcam_norm"].fillna(0)).round(4)
     return df_result[["cod_ibge", "eorcam_raw", "eorcam_norm", "contrib_eorcam"]]

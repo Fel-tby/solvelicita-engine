@@ -10,21 +10,21 @@ pivot AS (
         r.ano,
         MAX(CASE
             WHEN r.anexo     = 'RREO-Anexo 01'
-             AND r.cod_conta = 'ReceitasExcetoIntraOrcamentarias'
-             AND r.coluna    = 'PREVISÃO ATUALIZADA (a)'
+            AND  r.cod_conta = 'ReceitasExcetoIntraOrcamentarias'
+            AND  r.coluna    = 'PREVISÃO ATUALIZADA (a)'
             THEN r.valor
         END) AS receita_prevista,
         MAX(CASE
             WHEN r.anexo     = 'RREO-Anexo 01'
-             AND r.cod_conta = 'ReceitasExcetoIntraOrcamentarias'
-             AND r.coluna    = 'Até o Bimestre (c)'
+            AND  r.cod_conta = 'ReceitasExcetoIntraOrcamentarias'
+            AND  r.coluna    = 'Até o Bimestre (c)'
             THEN r.valor
         END) AS receita_realizada,
         MAX(CASE
             WHEN r.anexo     = 'RREO-Anexo 07'
-             AND r.cod_conta = 'RestosAPagarProcessadosENaoProcessadosLiquidadosAPagar'
-             AND r.coluna    = 'Saldo e = (a+ b) - (c + d)'
-             AND r.conta     = 'TOTAL (III) = (I + II)'
+            AND  r.cod_conta = 'RestosAPagarProcessadosENaoProcessadosLiquidadosAPagar'
+            AND  r.coluna    = 'Saldo e = (a+ b) - (c + d)'
+            AND  r.conta     = 'TOTAL (III) = (I + II)'
             THEN r.valor
         END) AS rrestos_processados
     FROM {{ ref('stg_siconfi_rreo') }} r
@@ -41,8 +41,8 @@ com_pct AS (
         receita_prevista IS NOT NULL AS entregou_rreo,
         CASE
             WHEN rrestos_processados IS NOT NULL
-             AND receita_realizada   IS NOT NULL
-             AND receita_realizada   > 0
+            AND  receita_realizada   IS NOT NULL
+            AND  receita_realizada   > 0
             THEN rrestos_processados / receita_realizada * 100
         END AS rproc_pct
     FROM pivot
@@ -54,7 +54,8 @@ contagem AS (
             entregou_rreo
             AND rproc_pct IS NOT NULL
             AND rproc_pct > 3.0
-        ) AS n_anos_cronicos
+        )                              AS n_anos_cronicos,
+        COUNTIF(rproc_pct IS NOT NULL) AS n_anos_com_rproc
     FROM com_pct
     GROUP BY cod_ibge
 ),

@@ -1,5 +1,5 @@
 WITH spine AS (
-    SELECT DISTINCT cod_ibge, municipio AS ente, populacao
+    SELECT DISTINCT cod_ibge, municipio AS ente, populacao, uf
     FROM {{ ref('stg_cauc') }}
 ),
 
@@ -50,10 +50,11 @@ rrestos_mais_recente AS (
 
 SELECT
     s.cod_ibge,
+    s.uf,
     s.ente,
     s.populacao,
 
-    -- ── siconfi (preenchido por siconfi_postprocessor.py) ────────────
+    -- ── siconfi (preenchido por siconfi_postprocessor.py)
     CAST(NULL AS FLOAT64)  AS eorcam_raw,
     CAST(NULL AS FLOAT64)  AS lliq_raw,
     CAST(NULL AS BOOL)     AS lliq_parcial,
@@ -63,24 +64,24 @@ SELECT
     CAST(NULL AS BOOL)     AS dado_defasado,
     rr.rrestos_nproc_pct,
 
-    -- ── rproc ────────────────────────────────────────────────────────
-    COALESCE(rp.n_anos_cronicos, 0) AS n_anos_cronicos,
+    -- ── rproc
+    rp.n_anos_cronicos               AS n_anos_cronicos,
 
-    -- ── qsiconfi ─────────────────────────────────────────────────────
+    -- ── qsiconfi
     COALESCE(qi.anos_entregues, 0) AS anos_entregues,
 
-    -- ── cauc ─────────────────────────────────────────────────────────
+    -- ── cauc
     COALESCE(cg.ccauc,       0.0)      AS ccauc,
     COALESCE(cg.n_graves,    0)        AS n_graves,
     COALESCE(cg.n_moderadas, 0)        AS n_moderadas,
     COALESCE(cg.n_leves,     0)        AS n_leves,
     COALESCE(cg.pendencias, 'REGULAR') AS pendencias,
 
-    -- ── dca (preenchido por dca_postprocessor.py) ────────────────────
+    -- ── dca (preenchido por dca_postprocessor.py)
     CAST(NULL AS FLOAT64)  AS autonomia_media,
     CAST(NULL AS BOOL)     AS autonomia_critica,
 
-    -- ── pncp ─────────────────────────────────────────────────────────
+    -- ── pncp
     pn.n_licitacoes,
     pn.valor_homologado_total,
     pn.n_dispensa,
