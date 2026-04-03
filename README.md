@@ -1,17 +1,22 @@
 # SolveLicita
 
+**[solvelicita.tech](https://solvelicita.tech)**
+
+</div>
+
+---
+
 [![Python](https://img.shields.io/badge/Python-3.11+-3776AB?logo=python&logoColor=white)](https://www.python.org/)
 [![dbt](https://img.shields.io/badge/dbt-FF694B?logo=dbt&logoColor=white)](https://www.getdbt.com/)
 [![Google BigQuery](https://img.shields.io/badge/BigQuery-669DF6?logo=googlebigquery&logoColor=white)](https://cloud.google.com/bigquery)
 [![Next.js](https://img.shields.io/badge/Next.js-000000?logo=nextdotjs&logoColor=white)](https://nextjs.org/)
 [![Supabase](https://img.shields.io/badge/Supabase-3ECF8E?logo=supabase&logoColor=white)](https://supabase.com/)
 <br>
-[![Site](https://img.shields.io/badge/site-solvelicita.tech-4f46e5?logo=vercel&logoColor=white)](https://solvelicita.tech)
 [![pytest](https://img.shields.io/badge/testes-pytest-0A9EDC?logo=pytest&logoColor=white)](tests/)
 [![Dados Públicos](https://img.shields.io/badge/dados-100%25%20públicos-2ea44f)](docs/METODOLOGIA.md)
 [![License: MIT](https://img.shields.io/badge/Licença-MIT-yellow.svg)](LICENSE)
 
-![Mapa de risco de solvência — Paraíba](docs/assets/mapa1.png)
+![Mapa de risco de solvência — Paraíba](mapa1.png)
 
 ---
 
