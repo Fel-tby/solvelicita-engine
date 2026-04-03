@@ -1,6 +1,6 @@
 # SolveLicita
 
-**[solvelicita.tech](https://solvelicita.tech)**
+Site em produção: **[solvelicita.tech](https://solvelicita.tech)**
 
 </div>
 
@@ -16,7 +16,7 @@
 [![Dados Públicos](https://img.shields.io/badge/dados-100%25%20públicos-2ea44f)](docs/METODOLOGIA.md)
 [![License: MIT](https://img.shields.io/badge/Licença-MIT-yellow.svg)](LICENSE)
 
-![Mapa de risco de solvência — Paraíba](mapa1.png)
+![Mapa de risco de solvência — Paraíba](docs/assets/mapa1.png)
 
 ---
 
