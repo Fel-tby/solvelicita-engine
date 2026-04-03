@@ -15,6 +15,7 @@ import os
 import pandas as pd
 from dotenv import load_dotenv
 from google.cloud import bigquery
+from utils.paths import get_paths
 from scorers.config import LIMIAR_AUTONOMIA_CRIT
 
 load_dotenv()
@@ -26,10 +27,15 @@ DATASET_I    = "intermediate"
 DATASET_M    = "mart"
 TABLE_TARGET = f"{PROJECT}.{DATASET_I}.int_dca_postprocessed"
 
-def _bq(client: bigquery.Client, table: str) -> pd.DataFrame:
-    return client.query(
-        f"SELECT * FROM `{PROJECT}.{DATASET_I}.{table}`"
-    ).to_dataframe()
+def _bq(client: bigquery.Client, table: str, uf: str) -> pd.DataFrame:
+    query = f"""
+        SELECT t.* 
+        FROM `{PROJECT}.{DATASET_I}.{table}` t
+        JOIN `{PROJECT}.staging.stg_municipios` m 
+          ON t.cod_ibge = m.cod_ibge
+        WHERE m.uf = '{uf}'
+    """
+    return client.query(query).to_dataframe()
 
 
 def _calcular_autonomia(df: pd.DataFrame) -> pd.DataFrame:
@@ -47,23 +53,29 @@ def _calcular_autonomia(df: pd.DataFrame) -> pd.DataFrame:
 
 
 def _merge_bq(client: bigquery.Client, df: pd.DataFrame, uf: str) -> None:
-    # Garante que a tabela existe antes do MERGE
-    schema = [
+    # Schema da tabela destino
+    schema_target = [
         bigquery.SchemaField("cod_ibge", "INT64"),
         bigquery.SchemaField("uf", "STRING"),
         bigquery.SchemaField("autonomia_media", "FLOAT64"),
         bigquery.SchemaField("autonomia_critica", "BOOL"),
         bigquery.SchemaField("updated_at", "TIMESTAMP"),
     ]
-    table = bigquery.Table(TABLE_TARGET, schema=schema)
+    table = bigquery.Table(TABLE_TARGET, schema=schema_target)
     client.create_table(table, exists_ok=True)
+
+    # Schema da tabela temporária (sem updated_at)
+    schema_tmp = [f for f in schema_target if f.name != "updated_at"]
 
     df["uf"] = uf
     tmp = f"{PROJECT}.{DATASET_M}._tmp_dca_post"
 
     job = client.load_table_from_dataframe(
         df, tmp,
-        job_config=bigquery.LoadJobConfig(write_disposition="WRITE_TRUNCATE")
+        job_config=bigquery.LoadJobConfig(
+            write_disposition="WRITE_TRUNCATE",
+            schema=schema_tmp
+        )
     )
     job.result()
 
@@ -95,7 +107,7 @@ def run(uf: str = "PB") -> None:
     client = bigquery.Client(project=PROJECT)
 
     print("\n── Lendo int_autonomia_base...")
-    df = _bq(client, "int_autonomia_base")
+    df = _bq(client, "int_autonomia_base", uf=uf)
     df["cod_ibge"] = df["cod_ibge"].astype("Int64")
 
     df_m = _calcular_autonomia(df)
@@ -104,6 +116,12 @@ def run(uf: str = "PB") -> None:
 
     print("\n── Fazendo MERGE em int_dca_postprocessed...")
     _merge_bq(client, df_m, uf=uf)
+
+    # Exportação Local (Audit)
+    paths = get_paths(uf)
+    csv_path = paths["processed"] / f"dca_indicadores_{uf.lower()}.csv"
+    df_m.to_csv(csv_path, index=False)
+    print(f"  💾 Exportado local: {csv_path.name}")
 
     print("\n✅ dca_postprocessor concluído.")
 

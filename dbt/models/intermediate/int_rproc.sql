@@ -9,22 +9,22 @@ pivot AS (
         r.cod_ibge,
         r.ano,
         MAX(CASE
-            WHEN r.anexo     = 'RREO-Anexo 01'
+            WHEN r.anexo     LIKE 'RREO-Anexo 01%'
             AND  r.cod_conta = 'ReceitasExcetoIntraOrcamentarias'
-            AND  r.coluna    = 'PREVISÃO ATUALIZADA (a)'
+            AND  REGEXP_CONTAINS(LOWER(r.coluna), r'^previs.o atualizada \(a\)$')
             THEN r.valor
         END) AS receita_prevista,
         MAX(CASE
-            WHEN r.anexo     = 'RREO-Anexo 01'
+            WHEN r.anexo     LIKE 'RREO-Anexo 01%'
             AND  r.cod_conta = 'ReceitasExcetoIntraOrcamentarias'
-            AND  r.coluna    = 'Até o Bimestre (c)'
+            AND  REGEXP_CONTAINS(LOWER(r.coluna), r'^at. o bimestre \(c\)$')
             THEN r.valor
         END) AS receita_realizada,
         MAX(CASE
-            WHEN r.anexo     = 'RREO-Anexo 07'
-            AND  r.cod_conta = 'RestosAPagarProcessadosENaoProcessadosLiquidadosAPagar'
-            AND  r.coluna    = 'Saldo e = (a+ b) - (c + d)'
-            AND  r.conta     = 'TOTAL (III) = (I + II)'
+            WHEN r.anexo     LIKE 'RREO-Anexo 07%'
+            AND  r.cod_conta IN ('RestosAPagarProcessadosENaoProcessadosLiquidadosAPagar', 'RestosAPagarProcessadosENaoProcessadosLiquidadosAPagarIntra')
+            AND  REGEXP_CONTAINS(LOWER(r.coluna), r'^saldo e = \(a ?\+ ?b\) - \(c ?\+ ?d\)$')
+            AND  REGEXP_CONTAINS(LOWER(r.conta), r'^total \(iii\) = \(i \+ ii\)$')
             THEN r.valor
         END) AS rrestos_processados
     FROM {{ ref('stg_siconfi_rreo') }} r

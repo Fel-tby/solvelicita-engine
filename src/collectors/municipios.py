@@ -14,7 +14,7 @@ import pandas as pd
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
-from utils.paths import get_paths, PROCESSED
+from utils.paths import get_paths
 from utils.bigquery_loader import upload_raw
 
 
@@ -42,11 +42,6 @@ def run(uf: str = "PB") -> pd.DataFrame:
     # Primário — nova estrutura UF subfolder
     df.to_csv(out, index=False, encoding="utf-8")
     print(f"✅ {len(df)} municípios salvos em {out}")
-
-    # Legacy flat — processors leem daqui até o Bloco 9
-    out_compat = PROCESSED.parent / f"municipios_{uf.lower()}_tabela.csv"
-    df.to_csv(out_compat, index=False, encoding="utf-8")
-    print(f"  [compat] {out_compat.name}: escrito para processors legados")
 
     print(df[["cod_ibge", "ente", "cnpj", "populacao"]].head())
 

@@ -30,7 +30,7 @@ logging.getLogger("httpx").setLevel(logging.WARNING)
 logging.getLogger("httpcore").setLevel(logging.WARNING)
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
-from utils.paths import get_paths, RAW
+from utils.paths import get_paths
 from utils.bigquery_loader import upload_raw
 
 BASE_URL_SICONFI = "https://apidatalake.tesouro.gov.br/ords/siconfi/tt"
@@ -207,7 +207,6 @@ def _salvar_com_merge(
     caminho:         Path,
     chave:           list[str],
     caminho_legado:  Path | None = None,
-    caminho_compat:  Path | None = None,
 ) -> None:
     """
     Salva df_novo. Se existir base histórica, concatena e desuplica pela chave
@@ -215,8 +214,6 @@ def _salvar_com_merge(
 
     caminho         : path primário (UF subfolder — nova estrutura)
     caminho_legado  : path da estrutura anterior, lido como base se o primário não existe
-    caminho_compat  : path flat legado onde os processors ainda leem (dual-write Block 1)
-                      Removido no Bloco 9 junto com os processors legados.
     """
     df_existente = _carregar_base(caminho, caminho_legado)
 
@@ -235,10 +232,6 @@ def _salvar_com_merge(
     df_final.to_csv(caminho, index=False, encoding="utf-8")
     anos = sorted(df_final["exercicio"].unique()) if "exercicio" in df_final.columns else []
     print(f"  💾 {caminho.name}: {len(df_final):,} linhas | anos: {anos}")
-
-    if caminho_compat:
-        df_final.to_csv(caminho_compat, index=False, encoding="utf-8")
-        print(f"  💾 [compat] {caminho_compat.name}: escrito para processors legados")
 
 
 async def orquestrar_coleta(anos: list[int], uf: str) -> None:
@@ -313,20 +306,18 @@ async def orquestrar_coleta(anos: list[int], uf: str) -> None:
     path_rreo_novo = raw_siconfi / f"siconfi_rreo_{uf_lower}.csv"
     path_rgf_novo  = raw_siconfi / f"siconfi_rgf_{uf_lower}.csv"
 
-    # Path flat legado — processors leem daqui até o Bloco 9
-    path_rreo_compat = RAW / "siconfi" / f"siconfi_rreo_{uf_lower}.csv"
-    path_rgf_compat  = RAW / "siconfi" / f"siconfi_rgf_{uf_lower}.csv"
-
     # Path da estrutura anterior a raw/siconfi/ (processed/) — fallback de leitura
-    legacy_rreo = RAW.parent / "processed" / f"siconfi_rreo_{uf_lower}.csv"
-    legacy_rgf  = RAW.parent / "processed" / f"siconfi_rgf_{uf_lower}.csv"
+    # Mantendo RAW local reference to avoid importing it globally or breaking previous paths
+    # Just defining raw folder as parent of raw_siconfi
+    RAW_BASE = paths["raw_siconfi"].parent.parent
+    legacy_rreo = RAW_BASE.parent / "processed" / f"siconfi_rreo_{uf_lower}.csv"
+    legacy_rgf  = RAW_BASE.parent / "processed" / f"siconfi_rgf_{uf_lower}.csv"
 
     if registros_rreo:
         df_rreo = pd.DataFrame(registros_rreo)
         _salvar_com_merge(
             df_rreo, path_rreo_novo, CHAVE_RREO,
             caminho_legado=legacy_rreo,
-            caminho_compat=path_rreo_compat,
         )
         upload_raw(df_rreo, "siconfi_rreo", uf_upper)
     else:
@@ -337,7 +328,6 @@ async def orquestrar_coleta(anos: list[int], uf: str) -> None:
         _salvar_com_merge(
             df_rgf, path_rgf_novo, CHAVE_RGF,
             caminho_legado=legacy_rgf,
-            caminho_compat=path_rgf_compat,
         )
         upload_raw(df_rgf, "siconfi_rgf", uf_upper)
     else:

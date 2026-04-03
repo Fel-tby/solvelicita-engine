@@ -24,7 +24,7 @@ from datetime import date
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
-from utils.paths import get_paths, RAW
+from utils.paths import get_paths
 from utils.bigquery_loader import upload_raw
 
 logging.basicConfig(
@@ -237,13 +237,6 @@ def run(
     # Primário — nova estrutura UF subfolder
     caminho_novo = paths["raw_dca"] / f"dca_raw_{uf.lower()}.csv"
     df_final     = _salvar_com_merge(df_novo, caminho_novo)
-
-    # Legacy flat — processors leem daqui até o Bloco 9
-    raw_dca_flat = RAW / "dca"
-    raw_dca_flat.mkdir(parents=True, exist_ok=True)
-    caminho_compat = raw_dca_flat / f"dca_raw_{uf.lower()}.csv"
-    _salvar_com_merge(df_novo, caminho_compat)
-    log.info(f"  [compat] {caminho_compat.name}: escrito para processors legados")
 
     log.info(
         f"  ✅ Raw salvo: {caminho_novo} "

@@ -135,6 +135,7 @@ def etapa_dbt(uf: str) -> None:
     print("\n[1/1] Rodando modelos do dbt no BigQuery (via venv_dbt)...")
     
     import platform
+    import os
     if platform.system() == "Windows":
         dbt_exe = ROOT / "venv_dbt" / "Scripts" / "dbt.exe"
     else:
@@ -144,9 +145,16 @@ def etapa_dbt(uf: str) -> None:
         print(f"  ⚠️ Executável dbt não encontrado em: {dbt_exe}")
         sys.exit(1)
 
+    # Resolve o caminho do json de credenciais do GCP para absoluto
+    # Para garantir que o dbt encontre o arquivo estando na pasta "dbt/"
+    env = os.environ.copy()
+    sa_path = env.get("GCP_SA_KEY_PATH")
+    if sa_path and not Path(sa_path).is_absolute():
+        env["GCP_SA_KEY_PATH"] = str((ROOT / sa_path).resolve())
+
     # Se houver necessidade futura de filtrar por UF no dbt, passamos a variável uf_filter aqui
     # ex: [str(dbt_exe), "run", "--vars", f'{{"uf_filter": "{uf}"}}']
-    res = subprocess.run([str(dbt_exe), "run"], cwd=str(ROOT / "dbt"))
+    res = subprocess.run([str(dbt_exe), "run"], cwd=str(ROOT / "dbt"), env=env)
     if res.returncode != 0:
         print("  ⚠️ Erro na execução do dbt.")
         sys.exit(res.returncode)

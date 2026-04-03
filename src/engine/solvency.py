@@ -137,6 +137,17 @@ def _carregar_bq(uf: str) -> pd.DataFrame:
 
     print(f"  {len(df)} municípios base carregados e cruzados")
 
+    # Exportação Local (Audit) — salva mart carregado do BQ para conferência local
+    paths = get_paths(uf)
+    csv_mart = paths["processed"] / f"mart_indicadores_{uf.lower()}.csv"
+    df.to_csv(csv_mart, index=False)
+    print(f"  💾 Mart exportado local: {csv_mart.name}")
+
+    if "ccauc" in df.columns:
+        csv_cauc = paths["processed"] / f"cauc_situacao_{uf.lower()}.csv"
+        df[["cod_ibge", "ccauc"]].to_csv(csv_cauc, index=False)
+        print(f"  💾 CAUC exportado local: {csv_cauc.name}")
+
     # Tipos — BQ retorna correto mas colunas com NULL viram object no pandas
     for col in ["eorcam_raw", "lliq_raw", "autonomia_media",
                 "decay_fator", "ccauc", "dias_atraso"]:

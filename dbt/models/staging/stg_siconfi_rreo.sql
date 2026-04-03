@@ -20,13 +20,14 @@ renamed AS (
         CAST(populacao   AS INT64)   AS populacao
     FROM source
     QUALIFY ROW_NUMBER() OVER(
-        PARTITION BY 
-            CAST(cod_ibge AS INT64), 
-            CAST(exercicio AS INT64), 
-            periodo, 
-            anexo, 
-            cod_conta, 
-            coluna, 
+        PARTITION BY
+            CAST(cod_ibge AS INT64),
+            CAST(exercicio AS INT64),
+            periodo,
+            anexo,
+            cod_conta,
+            coluna,
+            conta,
             esfera
         ORDER BY uf
     ) = 1

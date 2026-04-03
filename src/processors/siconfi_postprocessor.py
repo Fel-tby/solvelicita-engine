@@ -14,6 +14,7 @@ import pandas as pd
 from datetime import date
 from dotenv import load_dotenv
 from google.cloud import bigquery
+from utils.paths import get_paths
 
 load_dotenv()
 if key := os.getenv("GCP_SA_KEY_PATH"):
@@ -34,10 +35,15 @@ TABLE_TARGET = f"{PROJECT}.{DATASET_I}.int_siconfi_postprocessed"
 HOJE         = date.today()
 
 
-def _bq(client: bigquery.Client, table: str) -> pd.DataFrame:
-    return client.query(
-        f"SELECT * FROM `{PROJECT}.{DATASET_I}.{table}`"
-    ).to_dataframe()
+def _bq(client: bigquery.Client, table: str, uf: str) -> pd.DataFrame:
+    query = f"""
+        SELECT t.* 
+        FROM `{PROJECT}.{DATASET_I}.{table}` t
+        JOIN `{PROJECT}.staging.stg_municipios` m 
+          ON t.cod_ibge = m.cod_ibge
+        WHERE m.uf = '{uf}'
+    """
+    return client.query(query).to_dataframe()
 
 
 def _bq_mart_pop(client: bigquery.Client) -> pd.DataFrame:
@@ -164,8 +170,8 @@ def _lliq(df: pd.DataFrame, df_pop: pd.DataFrame) -> pd.DataFrame:
 # ── BQ MERGE ──────────────────────────────────────────────────────────────────
 
 def _merge_bq(client: bigquery.Client, df: pd.DataFrame, uf: str) -> None:
-    # Garante que a tabela existe antes do MERGE
-    schema = [
+    # Schema da tabela destino
+    schema_target = [
         bigquery.SchemaField("cod_ibge", "INT64"),
         bigquery.SchemaField("uf", "STRING"),
         bigquery.SchemaField("eorcam_raw", "FLOAT64"),
@@ -177,15 +183,21 @@ def _merge_bq(client: bigquery.Client, df: pd.DataFrame, uf: str) -> None:
         bigquery.SchemaField("dado_defasado", "BOOL"),
         bigquery.SchemaField("updated_at", "TIMESTAMP"),
     ]
-    table = bigquery.Table(TABLE_TARGET, schema=schema)
+    table = bigquery.Table(TABLE_TARGET, schema=schema_target)
     client.create_table(table, exists_ok=True)
+
+    # Schema da tabela temporária (o pandas não gera updated_at)
+    schema_tmp = [f for f in schema_target if f.name != "updated_at"]
 
     df["uf"] = uf
     tmp = f"{PROJECT}.{DATASET_M}._tmp_siconfi_post"
 
     job = client.load_table_from_dataframe(
         df, tmp,
-        job_config=bigquery.LoadJobConfig(write_disposition="WRITE_TRUNCATE")
+        job_config=bigquery.LoadJobConfig(
+            write_disposition="WRITE_TRUNCATE",
+            schema=schema_tmp
+        )
     )
     job.result()
 
@@ -226,13 +238,13 @@ def run(uf: str = "PB") -> None:
     client = bigquery.Client(project=PROJECT)
 
     print("\n── Lendo int_eorcam...")
-    df_eorcam = _bq(client, "int_eorcam")
+    df_eorcam = _bq(client, "int_eorcam", uf=uf)
     df_eorcam["cod_ibge"] = df_eorcam["cod_ibge"].astype("Int64")
     df_eorcam_m = _eorcam_ponderado(df_eorcam)
     print(f"   {len(df_eorcam_m)} municípios com eorcam_raw")
 
     print("\n── Lendo int_lliq_base...")
-    df_lliq = _bq(client, "int_lliq_base")
+    df_lliq = _bq(client, "int_lliq_base", uf=uf)
     df_lliq["cod_ibge"]   = df_lliq["cod_ibge"].astype("Int64")
 
     print("\n── Buscando populacao do mart...")
@@ -247,6 +259,12 @@ def run(uf: str = "PB") -> None:
     print("\n── Fazendo MERGE em int_siconfi_postprocessed...")
     merged = df_eorcam_m.merge(df_lliq_m, on="cod_ibge", how="outer")
     _merge_bq(client, merged, uf=uf)
+
+    # Exportação Local (Audit)
+    paths = get_paths(uf)
+    csv_path = paths["processed"] / f"siconfi_indicadores_{uf.lower()}.csv"
+    merged.to_csv(csv_path, index=False)
+    print(f"  💾 Exportado local: {csv_path.name}")
 
     print("\n✅ siconfi_postprocessor concluído.")
 

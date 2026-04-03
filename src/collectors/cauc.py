@@ -22,7 +22,7 @@ from datetime import date
 urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
-from utils.paths import get_paths, RAW
+from utils.paths import get_paths
 from utils.bigquery_loader import upload_raw
 
 URL_CAUC_BULK = (
@@ -140,19 +140,11 @@ def run(uf: str = "PB") -> pd.DataFrame:
 
     # Primário — nova estrutura UF subfolder
     # CSV salvo com colunas originais do CKAN ("1.1", "1.2" etc.)
-    # para que o cauc_processor.py legado continue funcionando sem alteração.
     df_uf.to_csv(raw_cauc_uf / f"cauc_raw_{uf.lower()}_{hoje}.csv",
                  index=False, encoding="utf-8-sig")
     df_uf.to_csv(raw_cauc_uf / f"cauc_raw_{uf.lower()}.csv",
                  index=False, encoding="utf-8-sig")
     print(f"  Salvo em: raw/cauc/{uf}/cauc_raw_{uf.lower()}.csv")
-
-    # Legacy flat — processors leem daqui até o Bloco 9
-    raw_cauc_flat = RAW / "cauc"
-    raw_cauc_flat.mkdir(parents=True, exist_ok=True)
-    df_uf.to_csv(raw_cauc_flat / f"cauc_raw_{uf.lower()}.csv",
-                 index=False, encoding="utf-8-sig")
-    print(f"  [compat] raw/cauc/cauc_raw_{uf.lower()}.csv: escrito para processors legados")
 
     print("=" * 70)
 

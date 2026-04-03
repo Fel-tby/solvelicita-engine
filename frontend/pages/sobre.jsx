@@ -2,11 +2,11 @@ import Link from 'next/link'
 import AboutPage from '../components/AboutPage'
 import SiteLayout from '../components/SiteLayout'
 
-export default function HomePage() {
+export default function SobrePage() {
   return (
     <SiteLayout
       title="SolveLicita — Solvência Municipal"
-      description="Score de solvência municipal com dados públicos, metodologia documentada e dashboard por estado."
+      description="Visão geral do SolveLicita."
       activeNav="sobre"
     >
       <section id="sobre" className="section active">

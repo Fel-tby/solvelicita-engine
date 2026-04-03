@@ -1,14 +1,14 @@
 """
 Coletor PNCP — Licitações por UF (Lei 14.133/2021).
 Responsabilidade: coletar registros paginados por modalidade/mês e
-salvar o JSONL de checkpoint incremental.
+salvar o JSONL de checkpoint incremental de forma assíncrona.
 
 A consolidação JSONL → CSV, flattening de campos aninhados e seleção
 de colunas é feita por:
     src/processors/pncp_processor.py
 
 Rodar individualmente:
-    python src/collectors/pncp.py                      # full PB (desde 2023-01-01)
+    python src/collectors/pncp.py                      # full (desde 2025-01-01)
     python src/collectors/pncp.py --mode incremental   # apenas últimos 2 meses
     python src/collectors/pncp.py --uf CE              # outro estado, full
     python src/collectors/pncp.py --mode incremental --uf CE
@@ -17,19 +17,24 @@ Rodar individualmente:
 import sys
 import json
 import time
-import requests
+import asyncio
+import httpx
+import logging
 from pathlib import Path
 from datetime import date, timedelta
 from calendar import monthrange
 
+logging.getLogger("httpx").setLevel(logging.WARNING)
+logging.getLogger("httpcore").setLevel(logging.WARNING)
+
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
-from utils.paths import get_paths, RAW
+from utils.paths import get_paths
 from utils.bigquery_loader import upload_raw
 
 BASE_URL = "https://pncp.gov.br/api/consulta/v1/contratacoes/publicacao"
 
-# Full: desde o início da vigência da lei (nacional — não varia por UF).
-DATA_INICIO_FULL       = date(2023, 1, 1)
+# Reduzido para 2025-01-01 para maior performance
+DATA_INICIO_FULL       = date(2025, 1, 1)
 JANELA_INCREMENTAL_DIAS = 60
 
 MODALIDADES = {
@@ -54,11 +59,54 @@ HEADERS = {
 }
 
 TAMANHO_PAGINA    = 50
-SLEEP_PAGINA      = 0.5
-SLEEP_MES         = 0.4
-SLEEP_MODALIDADE  = 2.0
+MAX_CONCORRENCIA  = 5
 BACKOFF_429       = 60
 MAX_RETRIES       = 6
+
+
+class Progresso:
+    def __init__(self, total: int):
+        self.total     = total
+        self.feitas    = 0
+        self.erros     = 0
+        self.vazios    = 0
+        self.registros = 0
+        self._lock     = asyncio.Lock()
+        self._inicio   = time.time()
+
+    async def tick(self, n_registros: int = 0, erro: bool = False, vazio: bool = False):
+        async with self._lock:
+            self.feitas    += 1
+            self.registros += n_registros
+            if erro:
+                self.erros  += 1
+            if vazio:
+                self.vazios += 1
+            self._render()
+
+    def _render(self):
+        elapsed  = time.time() - self._inicio
+        pct      = self.feitas / self.total * 100
+        bar_len  = 30
+        filled   = int(bar_len * self.feitas / self.total)
+        bar      = "=" * filled + "-" * (bar_len - filled)
+        eta      = (elapsed / self.feitas * (self.total - self.feitas)) if self.feitas else 0
+        eta_str  = f"{eta/60:.0f}min" if eta >= 60 else f"{eta:.0f}s"
+        line = (
+            f"\r  [{bar}] "
+            f"{self.feitas:,}/{self.total:,} ({pct:.1f}%) | "
+            f"regs: {self.registros:,} | "
+            f"erros: {self.erros} | "
+            f"ETA: {eta_str} "
+        )
+        sys.stdout.write(line)
+        sys.stdout.flush()
+
+    def finalizar(self):
+        elapsed = time.time() - self._inicio
+        sys.stdout.write("\n")
+        sys.stdout.flush()
+        print(f"  ✅ Concluído: {self.registros:,} registros em {elapsed/60:.1f} min")
 
 
 def gerar_meses(inicio: date, fim: date) -> list[tuple[date, date]]:
@@ -75,37 +123,46 @@ def gerar_meses(inicio: date, fim: date) -> list[tuple[date, date]]:
     return meses
 
 
-def fetch_com_backoff(params: dict) -> dict | None:
+async def fetch_com_backoff(
+    client: httpx.AsyncClient,
+    params: dict,
+    pausa_global: asyncio.Event
+) -> dict | None:
     for t in range(1, MAX_RETRIES + 1):
+        await pausa_global.wait()
         try:
-            r = requests.get(BASE_URL, params=params, headers=HEADERS, timeout=30)
+            r = await client.get(BASE_URL, params=params)
             if r.status_code == 200:
                 return r.json()
             if r.status_code == 204:
                 return {"data": [], "totalRegistros": 0, "totalPaginas": 0, "empty": True}
             if r.status_code == 429:
+                pausa_global.clear()
                 espera = BACKOFF_429 * t
-                print(f"\n  [WARNING] 429 Rate Limit. Aguardando {espera}s (Tentativa {t}/{MAX_RETRIES})")
-                time.sleep(espera)
+                print(f"\n  [WARNING] 429 Rate Limit. Pausando por {espera}s...")
+                await asyncio.sleep(espera)
+                pausa_global.set()
                 continue
             if r.status_code in (500, 502, 503, 504):
-                time.sleep(15 * t)
+                await asyncio.sleep(15 * t)
                 continue
             print(f"\n  [ERROR] HTTP {r.status_code}: {r.text[:120]}")
             return None
-        except requests.exceptions.Timeout:
-            time.sleep(10 * t)
-        except requests.exceptions.ConnectionError:
-            time.sleep(20 * t)
-    print(f"\n  [ERROR] Falha definitiva após {MAX_RETRIES} tentativas.")
+        except httpx.TimeoutException:
+            await asyncio.sleep(10 * t)
+        except httpx.RequestError:
+            await asyncio.sleep(20 * t)
     return None
 
 
-def coletar_bloco(
-    modalidade: int,
-    data_ini:   date,
-    data_fim:   date,
-    uf:         str,
+async def coletar_bloco_async(
+    client:       httpx.AsyncClient,
+    modalidade:   int,
+    data_ini:     date,
+    data_fim:     date,
+    uf:           str,
+    semaforo:     asyncio.Semaphore,
+    pausa_global: asyncio.Event,
 ) -> tuple[list, bool]:
     params_base = {
         "dataInicial"                  : data_ini.strftime("%Y%m%d"),
@@ -115,26 +172,111 @@ def coletar_bloco(
         "tamanhoPagina"                : TAMANHO_PAGINA,
         "pagina"                       : 1,
     }
-    resp = fetch_com_backoff(params_base)
-    if resp is None:
-        return [], False
-    if resp.get("empty") or not resp.get("data"):
-        return [], True
+    
+    async with semaforo:
+        resp = await fetch_com_backoff(client, params_base, pausa_global)
+        if resp is None:
+            return [], False
+        if resp.get("empty") or not resp.get("data"):
+            return [], True
 
-    registros   = list(resp["data"])
-    total_pags  = resp.get("totalPaginas", 1)
-    total_regs  = resp.get("totalRegistros", 0)
+        registros   = list(resp["data"])
+        total_pags  = resp.get("totalPaginas", 1)
 
-    if total_regs > 0:
-        print(f"  {total_regs} regs / {total_pags} págs", end="", flush=True)
+        for pag in range(2, total_pags + 1):
+            # Pequeno delay para não sobrecarregar em paginações profundas
+            await asyncio.sleep(0.5)
+            resp_pag = await fetch_com_backoff(client, {**params_base, "pagina": pag}, pausa_global)
+            if resp_pag and resp_pag.get("data"):
+                registros.extend(resp_pag["data"])
 
-    for pag in range(2, total_pags + 1):
-        time.sleep(SLEEP_PAGINA)
-        resp_pag = fetch_com_backoff({**params_base, "pagina": pag})
-        if resp_pag and resp_pag.get("data"):
-            registros.extend(resp_pag["data"])
+        return registros, True
 
-    return registros, True
+
+async def worker_bloco(
+    client:       httpx.AsyncClient,
+    cod_mod:      int,
+    nome_mod:     str,
+    data_ini:     date,
+    data_fim:     date,
+    uf:           str,
+    semaforo:     asyncio.Semaphore,
+    pausa_global: asyncio.Event,
+    progresso:    Progresso,
+    file_lock:    asyncio.Lock,
+    json_path:    Path
+) -> None:
+    chave = f"{cod_mod}_{data_ini.strftime('%Y-%m')}"
+    meta = {
+        "_chave"          : chave,
+        "_modalidade"     : cod_mod,
+        "_modalidade_nome": nome_mod,
+        "_mes"            : data_ini.strftime("%Y-%m"),
+        "_uf"             : uf,
+    }
+
+    registros, sucesso = await coletar_bloco_async(
+        client, cod_mod, data_ini, data_fim, uf, semaforo, pausa_global
+    )
+
+    if not sucesso:
+        await progresso.tick(erro=True)
+        return
+
+    linhas = []
+    if registros:
+        for rec in registros:
+            rec.update(meta)
+            linhas.append(json.dumps(rec, ensure_ascii=False) + "\n")
+    else:
+        linhas.append(json.dumps({**meta, "_sem_dados": True}, ensure_ascii=False) + "\n")
+
+    # Salva no arquivo de forma thread/coroutine-safe
+    async with file_lock:
+        with open(json_path, "a", encoding="utf-8") as fj:
+            fj.writelines(linhas)
+
+    await progresso.tick(n_registros=len(registros), vazio=not registros)
+
+
+async def orquestrar_coleta(
+    uf: str,
+    meses: list[tuple[date, date]],
+    json_path: Path,
+    chaves_feitas: set[str]
+) -> None:
+    semaforo     = asyncio.Semaphore(MAX_CONCORRENCIA)
+    pausa_global = asyncio.Event()
+    pausa_global.set()
+    file_lock    = asyncio.Lock()
+    limits       = httpx.Limits(max_keepalive_connections=10, max_connections=MAX_CONCORRENCIA + 5)
+
+    tarefas_params = []
+    for cod_mod, nome_mod in MODALIDADES.items():
+        for data_ini, data_fim_bloco in meses:
+            chave = f"{cod_mod}_{data_ini.strftime('%Y-%m')}"
+            if chave not in chaves_feitas:
+                tarefas_params.append((cod_mod, nome_mod, data_ini, data_fim_bloco))
+
+    total_blocos = len(tarefas_params)
+    if total_blocos == 0:
+        print("  Todos os blocos já foram coletados!")
+        return
+
+    print(f"  Iniciando extração assíncrona de {total_blocos} blocos pendentes...\n")
+    progresso = Progresso(total_blocos)
+
+    async with httpx.AsyncClient(headers=HEADERS, timeout=45.0, limits=limits) as client:
+        tarefas = [
+            worker_bloco(
+                client, cod_mod, nome_mod, data_ini, data_fim, uf,
+                semaforo, pausa_global, progresso, file_lock, json_path
+            )
+            for (cod_mod, nome_mod, data_ini, data_fim) in tarefas_params
+        ]
+        await asyncio.gather(*tarefas)
+
+    progresso.finalizar()
 
 
 def run(mode: str = "full", uf: str = "PB") -> None:
@@ -143,7 +285,7 @@ def run(mode: str = "full", uf: str = "PB") -> None:
 
     Parâmetros
     ----------
-    mode : "full"        — coleta desde DATA_INICIO_FULL (2023-01-01).
+    mode : "full"        — coleta desde DATA_INICIO_FULL (2025-01-01).
                            Se o JSONL já existir, apaga e reinicia do zero.
            "incremental" — coleta apenas os últimos JANELA_INCREMENTAL_DIAS dias.
                            Usa o checkpoint JSONL existente (pula blocos já feitos).
@@ -156,17 +298,11 @@ def run(mode: str = "full", uf: str = "PB") -> None:
     # Primário — nova estrutura UF subfolder
     snap_jsonl_novo = paths["raw_pncp"] / f"pncp_parcial_{uf.lower()}.jsonl"
 
-    # Legacy flat — pncp_processor.py lê daqui até o Bloco 9
-    raw_pncp_flat    = RAW / "pncp"
-    raw_pncp_flat.mkdir(parents=True, exist_ok=True)
-    snap_jsonl_compat = raw_pncp_flat / "pncp_parcial.jsonl"
-
     if mode == "full":
         data_inicio = DATA_INICIO_FULL
-        for jsonl in (snap_jsonl_novo, snap_jsonl_compat):
-            if jsonl.exists():
-                jsonl.unlink()
-                print(f"  [INFO] {jsonl.name} removido — coleta full reiniciada.")
+        if snap_jsonl_novo.exists():
+            snap_jsonl_novo.unlink()
+            print(f"  [INFO] {snap_jsonl_novo.name} removido — coleta full reiniciada.")
     else:
         data_inicio = hoje - timedelta(days=JANELA_INCREMENTAL_DIAS)
 
@@ -174,10 +310,10 @@ def run(mode: str = "full", uf: str = "PB") -> None:
     meses = gerar_meses(data_inicio, hoje)
 
     print("=" * 65)
-    print(f"  PNCP Collector — Licitações {uf} (Lei 14.133/2021)")
+    print(f"  PNCP Collector Async - Licitacoes {uf} (Lei 14.133/2021)")
     print(f"  Modo   : {mode.upper()}")
-    print(f"  Range  : {data_inicio} → {hoje}")
-    print(f"  Janela : {len(meses)} meses × {len(MODALIDADES)} modalidades = {len(meses)*len(MODALIDADES)} blocos")
+    print(f"  Range  : {data_inicio} -> {hoje}")
+    print(f"  Janela : {len(meses)} meses x {len(MODALIDADES)} modalidades")
     print("=" * 65)
 
     # Checkpoint: blocos já coletados (lê do primário)
@@ -192,70 +328,16 @@ def run(mode: str = "full", uf: str = "PB") -> None:
                 except Exception:
                     pass
         if chaves_feitas:
-            print(f"\n  [INFO] {len(chaves_feitas)} blocos já no JSONL — serão ignorados.")
+            print(f"  [INFO] {len(chaves_feitas)} blocos já no JSONL — serão ignorados.")
 
-    total = 0
-
-    with (
-        open(snap_jsonl_novo,   "a", encoding="utf-8") as fj_novo,
-        open(snap_jsonl_compat, "a", encoding="utf-8") as fj_compat,
-    ):
-        for cod_mod, nome_mod in MODALIDADES.items():
-            print(f"\n▶ [{cod_mod:02d}] {nome_mod}")
-
-            for data_ini, data_fim_bloco in meses:
-                chave = f"{cod_mod}_{data_ini.strftime('%Y-%m')}"
-
-                if chave in chaves_feitas:
-                    continue
-
-                print(f"  {data_ini.strftime('%m/%Y')} →", end=" ", flush=True)
-
-                meta = {
-                    "_chave"          : chave,
-                    "_modalidade"     : cod_mod,
-                    "_modalidade_nome": nome_mod,
-                    "_mes"            : data_ini.strftime("%Y-%m"),
-                    "_uf"             : uf,
-                }
-
-                registros, sucesso = coletar_bloco(cod_mod, data_ini, data_fim_bloco, uf)
-
-                if not sucesso:
-                    print("[ERROR] Falha de comunicação. Bloco pendente.")
-                    time.sleep(5)
-                    continue
-
-                if registros:
-                    for rec in registros:
-                        rec.update(meta)
-                        linha_json = json.dumps(rec, ensure_ascii=False) + "\n"
-                        fj_novo.write(linha_json)
-                        fj_compat.write(linha_json)
-                    total += len(registros)
-                    print(f"✓ (+{len(registros)})")
-                else:
-                    vazio = json.dumps({**meta, "_sem_dados": True}, ensure_ascii=False) + "\n"
-                    fj_novo.write(vazio)
-                    fj_compat.write(vazio)
-                    print("∅")
-
-                fj_novo.flush()
-                fj_compat.flush()
-                time.sleep(SLEEP_MES)
-
-            time.sleep(SLEEP_MODALIDADE)
+    # Executa loop assíncrono
+    asyncio.run(orquestrar_coleta(uf, meses, snap_jsonl_novo, chaves_feitas))
 
     elapsed = time.time() - t0
     print(f"\n[SUCCESS] Coleta concluída em {elapsed / 60:.1f} min")
-    print(f"  Registros novos : {total:,}")
     print(f"  JSONL primário  : {snap_jsonl_novo.name}")
-    print(f"  JSONL compat    : {snap_jsonl_compat.name}")
-    print(f"  Próximo passo   : python src/processors/pncp_processor.py")
+    print(f"  Próximo passo   : python pipeline.py --steps process,score")
     print("=" * 65)
-
-    # BigQuery: não há DataFrame disponível aqui (JSONL processado pelo processor).
-    # O upload para raw.pncp_licitacoes é feito pelo pncp_processor após flatten.
 
 
 if __name__ == "__main__":
