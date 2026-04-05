@@ -16,6 +16,8 @@ const DOC_LINKS = [
   { id: 'citar', label: 'Como citar', group: 'Referência' },
 ]
 
+const DOC_GROUPS = [...new Set(DOC_LINKS.map((item) => item.group))]
+
 export default function DocsPage() {
   const [docId, setDocId] = useState('visao')
 
@@ -28,47 +30,25 @@ export default function DocsPage() {
       <section id="docs" className="section active">
         <div id="docs-wrap" className="docs-wrap">
           <div className="docs-sidebar">
-            <div className="docs-sec-title">Metodologia</div>
-            {DOC_LINKS.filter((item) => item.group === 'Metodologia').map((item) => (
-              <a
-                key={item.id}
-                className={`doc-link ${docId === item.id ? 'active' : ''}`}
-                href="#"
-                onClick={(event) => {
-                  event.preventDefault()
-                  setDocId(item.id)
-                }}
-              >
-                {item.label}
-              </a>
-            ))}
-            <div className="docs-sec-title">Validação</div>
-            {DOC_LINKS.filter((item) => item.group === 'Validação').map((item) => (
-              <a
-                key={item.id}
-                className={`doc-link ${docId === item.id ? 'active' : ''}`}
-                href="#"
-                onClick={(event) => {
-                  event.preventDefault()
-                  setDocId(item.id)
-                }}
-              >
-                {item.label}
-              </a>
-            ))}
-            <div className="docs-sec-title">Referência</div>
-            {DOC_LINKS.filter((item) => item.group === 'Referência').map((item) => (
-              <a
-                key={item.id}
-                className={`doc-link ${docId === item.id ? 'active' : ''}`}
-                href="#"
-                onClick={(event) => {
-                  event.preventDefault()
-                  setDocId(item.id)
-                }}
-              >
-                {item.label}
-              </a>
+            {DOC_GROUPS.map((group) => (
+              <div key={group} className="docs-nav-group">
+                <div className="docs-sec-title">{group}</div>
+                <div className="docs-nav-links">
+                  {DOC_LINKS.filter((item) => item.group === group).map((item) => (
+                    <a
+                      key={item.id}
+                      className={`doc-link ${docId === item.id ? 'active' : ''}`}
+                      href="#"
+                      onClick={(event) => {
+                        event.preventDefault()
+                        setDocId(item.id)
+                      }}
+                    >
+                      {item.label}
+                    </a>
+                  ))}
+                </div>
+              </div>
             ))}
           </div>
 

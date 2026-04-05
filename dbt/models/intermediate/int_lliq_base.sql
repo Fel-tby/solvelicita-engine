@@ -1,7 +1,9 @@
 WITH ultimo_periodo_rreo AS (
 SELECT cod_ibge, ano, MAX(periodo) AS max_periodo
 FROM {{ ref('stg_siconfi_rreo') }}
-WHERE ano BETWEEN 2020 AND 2025
+-- Dinamico: sempre cobre os ultimos 6 anos completos. Em 2026 = 2020 AND 2025.
+WHERE ano BETWEEN EXTRACT(YEAR FROM CURRENT_DATE()) - 6
+               AND EXTRACT(YEAR FROM CURRENT_DATE()) - 1
 GROUP BY cod_ibge, ano
 ),
 receita AS (
@@ -25,7 +27,9 @@ ultimo_periodo_rgf AS (
 SELECT cod_ibge, ano, periodicidade, MAX(periodo) AS max_periodo
 FROM {{ ref('stg_siconfi_rgf') }}
 WHERE anexo = 'RGF-Anexo 05'
-AND ano BETWEEN 2020 AND 2025
+-- Dinamico: sempre cobre os ultimos 6 anos completos. Em 2026 = 2020 AND 2025.
+AND ano BETWEEN EXTRACT(YEAR FROM CURRENT_DATE()) - 6
+            AND EXTRACT(YEAR FROM CURRENT_DATE()) - 1
 GROUP BY cod_ibge, ano, periodicidade
 ),
 regime_prioritario AS (

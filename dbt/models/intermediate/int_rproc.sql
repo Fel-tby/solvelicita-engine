@@ -1,7 +1,9 @@
 WITH ultimo_periodo AS (
     SELECT cod_ibge, ano, MAX(periodo) AS max_periodo
     FROM {{ ref('stg_siconfi_rreo') }}
-    WHERE ano BETWEEN 2020 AND 2025
+    -- Dinamico: sempre cobre os ultimos 6 anos completos. Em 2026 = 2020 AND 2025.
+    WHERE ano BETWEEN EXTRACT(YEAR FROM CURRENT_DATE()) - 6
+                   AND EXTRACT(YEAR FROM CURRENT_DATE()) - 1
     GROUP BY cod_ibge, ano
 ),
 pivot AS (

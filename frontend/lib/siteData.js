@@ -1,8 +1,8 @@
 export const UF_METADATA = [
   { uf: 'PB', nome: 'Paraíba', municipios: 223, geojsonPath: '/pb_geo.geojson' },
   { uf: 'RN', nome: 'Rio Grande do Norte', municipios: 167 },
-  { uf: 'CE', nome: 'Ceará', municipios: 184 },
-  { uf: 'PE', nome: 'Pernambuco', municipios: 185 },
+  { uf: 'CE', nome: 'Ceará', municipios: 184, geojsonPath: '/ce_geo.geojson' },
+  { uf: 'PE', nome: 'Pernambuco', municipios: 185, geojsonPath: '/pe_geo.geojson' },
   { uf: 'MA', nome: 'Maranhão', municipios: 217 },
   { uf: 'PI', nome: 'Piauí', municipios: 224 },
   { uf: 'AL', nome: 'Alagoas', municipios: 102 },

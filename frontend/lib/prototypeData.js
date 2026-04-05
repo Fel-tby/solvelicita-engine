@@ -1,8 +1,8 @@
 export const ESTADOS = [
   { uf: 'PB', nome: 'Paraíba', n: 223, baixo: 75, medio: 90, alto: 42, critico: 5, nd: 11, ativo: true },
   { uf: 'RN', nome: 'Rio Gde. Norte', n: 167, baixo: 61, medio: 59, alto: 29, critico: 12, nd: 6, ativo: true },
-  { uf: 'CE', nome: 'Ceará', n: 184, ativo: false },
-  { uf: 'PE', nome: 'Pernambuco', n: 185, ativo: false },
+  { uf: 'CE', nome: 'Ceará', n: 184, ativo: true },
+  { uf: 'PE', nome: 'Pernambuco', n: 185, ativo: true },
   { uf: 'MA', nome: 'Maranhão', n: 217, ativo: false },
   { uf: 'PI', nome: 'Piauí', n: 224, ativo: false },
   { uf: 'AL', nome: 'Alagoas', n: 102, ativo: false },
