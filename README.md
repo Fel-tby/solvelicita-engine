@@ -1,6 +1,6 @@
 # SolveLicita
 
-Site em produção: **[solvelicita.tech](https://solvelicita.tech)**
+**[solvelicita.tech](https://solvelicita.tech)**
 
 </div>
 
@@ -14,7 +14,7 @@ Site em produção: **[solvelicita.tech](https://solvelicita.tech)**
 <br>
 [![pytest](https://img.shields.io/badge/testes-pytest-0A9EDC?logo=pytest&logoColor=white)](tests/)
 [![Dados Públicos](https://img.shields.io/badge/dados-100%25%20públicos-2ea44f)](docs/METODOLOGIA.md)
-[![License: MIT](https://img.shields.io/badge/Licença-MIT-yellow.svg)](LICENSE)
+[![License: AGPL-3.0](https://img.shields.io/badge/Licen%C3%A7a-AGPL--3.0-blue.svg)](LICENSE)
 
 ![Mapa de risco de solvência — Paraíba](docs/assets/mapa1.png)
 
