@@ -11,6 +11,8 @@ const UF_CANDIDATE_KEYS = [
   'uf_ibge',
 ]
 
+const SUPABASE_PAGE_SIZE = 1000
+
 export function normalizeUf(value) {
   const text = String(value || '').trim().toUpperCase()
   return /^[A-Z]{2}$/.test(text) ? text : ''
@@ -28,15 +30,47 @@ export function inferUfFromRow(row) {
 }
 
 export async function fetchMunicipios() {
-  const { data, error } = await supabase.from('municipios').select('*')
-  if (error) throw error
-  return Array.isArray(data) ? data : []
+  const rows = []
+  let from = 0
+
+  while (true) {
+    // Supabase REST limits unpaginated selects to 1000 rows by default.
+    const { data, error } = await supabase
+      .from('municipios')
+      .select('*')
+      .order('cod_ibge', { ascending: true })
+      .range(from, from + SUPABASE_PAGE_SIZE - 1)
+
+    if (error) throw error
+
+    const batch = Array.isArray(data) ? data : []
+    rows.push(...batch)
+
+    if (batch.length < SUPABASE_PAGE_SIZE) break
+    from += SUPABASE_PAGE_SIZE
+  }
+
+  return rows
 }
 
 export async function fetchMunicipiosByUf(uf) {
   const normalizedUf = normalizeUf(uf)
-  const rows = await fetchMunicipios()
-  return rows.filter((row) => inferUfFromRow(row) === normalizedUf)
+  if (!normalizedUf) return []
+
+  try {
+    const { data, error } = await supabase
+      .from('municipios')
+      .select('*')
+      .eq('uf', normalizedUf)
+      .order('cod_ibge', { ascending: true })
+
+    if (error) throw error
+
+    return Array.isArray(data) ? data : []
+  } catch {
+    const rows = await fetchMunicipios()
+    return rows.filter((row) => inferUfFromRow(row) === normalizedUf)
+  }
 }
 
 export async function fetchGeoJsonForUf(uf) {
