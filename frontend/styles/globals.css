@@ -67,7 +67,7 @@ nav {
 
 /* ── SOBRE ── */
 .hero {
-  max-width: 780px; margin: 0 auto; padding: 5rem 2rem 3rem;
+  max-width: 780px; margin: 0 auto; padding: 4.1rem 2rem 3rem;
 }
 .hero h1 {
   font-size: clamp(1.8rem, 4vw, 2.6rem); font-weight: 600; line-height: 1.2;
@@ -608,15 +608,6 @@ footer {
 @keyframes state-appear {
   from { opacity: 0; fill: #dde0e5; }
   to   { opacity: 1; fill: #dde0e5; }
-}
-.state-label-active {
-  fill: #fff;
-  font-family: var(--mono);
-  font-size: 11px;
-  font-weight: 500;
-  text-anchor: middle;
-  dominant-baseline: middle;
-  pointer-events: none;
 }
 .brazil-map-legend {
   display: flex;

@@ -26,7 +26,7 @@ export default function AboutPage() {
 
       <div className="brazil-map-section">
         <div className="brazil-map-inner">
-          <div className="brazil-map-label">Cobertura atual · em expansão pelo nordeste</div>
+          <div className="brazil-map-label">Cobertura atual</div>
           <MapaBrasil />
           <div className="brazil-map-legend">
             <div className="map-legend-item">
@@ -59,9 +59,8 @@ export default function AboutPage() {
         <div className="stat-new">
           <div className="stat-new-n">5.570</div>
           <div className="stat-new-label">
-            municípios brasileiros, metodologia e arquitetura de dados projetada para cobertura nacional, 
-            piloto em expansão pelo Nordeste
-
+            municípios brasileiros, com metodologia e arquitetura de dados projetadas para cobertura
+            nacional e piloto cobrindo os 1.794 municípios do Nordeste
           </div>
         </div>
       </div>
