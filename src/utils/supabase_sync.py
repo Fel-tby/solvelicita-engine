@@ -24,8 +24,10 @@ COLUNAS = {
     "contrib_eorcam": "contrib_eorcam", "contrib_qsiconfi": "contrib_qsiconfi",
     "contrib_autonomia": "contrib_autonomia", "contrib_rproc": "contrib_rproc",
     "lliq_raw": "lliq_raw", "eorcam_raw": "eorcam_raw",
-    "rrestos_nproc_pct": "rrestos_nproc_pct",
+    "rproc_pct_atual": "rproc_pct_atual",
     "qsiconfi": "qsiconfi", "ccauc": "ccauc", "autonomia_media": "autonomia_media",
+    "n_graves": "n_graves", "n_moderadas": "n_moderadas", "n_leves": "n_leves",
+    "pendencias": "pendencias", "pendencias_cauc_json": "pendencias_cauc_json",
     "lliq_norm": "lliq_norm", "eorcam_norm": "eorcam_norm",
     "rproc_norm": "rproc_norm", "autonomia_norm": "autonomia_norm",
     "score_base": "score_base", "score_bruto": "score_bruto",
@@ -44,6 +46,7 @@ COLUNAS = {
 COLUNAS_INTEGER = {
     "n_licitacoes", "n_dispensa", "ano_ultima_licitacao",
     "n_anos_cronicos", "anos_entregues", "populacao", "dias_atraso",
+    "n_graves", "n_moderadas", "n_leves",
 }
 COLUNAS_BOOLEAN = {
     "lliq_parcial", "dado_defasado", "dado_suspeito",

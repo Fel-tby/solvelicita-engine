@@ -55,7 +55,7 @@ const COLUNAS = [
   { key: 'class', label: 'Risco', field: 'classificacao_canonica' },
   { key: 'pop', label: 'Pop.', field: 'populacao' },
   { key: 'eorcam', label: 'Exec.Orc.%', field: 'eorcam_raw' },
-  { key: 'rproc', label: 'RP Proc.', field: 'n_anos_cronicos' },
+  { key: 'rproc', label: 'RP Proc. %', field: 'rproc_pct_atual' },
   { key: 'siconfi', label: 'SICONFI', field: 'qsiconfi' },
   { key: 'cauc', label: 'CAUC', field: 'ccauc' },
   { key: 'lliq', label: 'Lliq', field: 'lliq_raw' },
@@ -63,7 +63,6 @@ const COLUNAS = [
   { key: 'licit', label: 'Licitacoes', field: 'n_licitacoes' },
   { key: 'valor', label: 'Val.Homolog.', field: 'valor_homologado_total' },
   { key: 'dispensa', label: '% Dispensa', field: 'pct_dispensa' },
-  { key: 'alertas', label: 'Alertas', field: null },
 ]
 
 const PREVIEW_LINHAS = 10
@@ -165,11 +164,36 @@ function AlertaBadge({ label, cor = '#f59e0b' }) {
         color: cor,
         background: `${cor}18`,
         border: `1px solid ${cor}33`,
+        lineHeight: 1.2,
+        whiteSpace: 'normal',
+        maxWidth: '100%',
       }}
     >
       ! {label}
     </span>
   )
+}
+
+function parsePendenciasCauc(value) {
+  if (Array.isArray(value)) return value
+  if (!value) return []
+
+  if (typeof value === 'string') {
+    try {
+      const parsed = JSON.parse(value)
+      return Array.isArray(parsed) ? parsed : []
+    } catch {
+      return []
+    }
+  }
+
+  return []
+}
+
+function corPendenciaCauc(gravidade) {
+  if (gravidade === 'GRAVE') return '#ef4444'
+  if (gravidade === 'MODERADA') return '#f59e0b'
+  return '#38bdf8'
 }
 
 function KPI({ label, value, destaque }) {
@@ -259,6 +283,13 @@ function getMunicipioAlertas(municipio) {
   return alertas
 }
 
+function getMunicipioAlertasCauc(municipio) {
+  return parsePendenciasCauc(municipio.pendencias_cauc_json).map((pendencia) => ({
+    label: `CAUC ${pendencia.codigo}: ${pendencia.descricao}`,
+    cor: corPendenciaCauc(pendencia.gravidade),
+  }))
+}
+
 function MunicipioSelecionado({ municipio }) {
   if (!municipio) {
     return (
@@ -279,12 +310,14 @@ function MunicipioSelecionado({ municipio }) {
   }
 
   const risco = normalizeClassificacao(municipio.classificacao)
+  const alertas = getMunicipioAlertas(municipio)
+  const alertasCauc = getMunicipioAlertasCauc(municipio)
   const blocos = [
     ['Score', municipio.score != null ? Number(municipio.score).toFixed(1) : '-'],
     ['Risco', LABEL_RISCO_LONGO[risco]],
     ['Populacao', municipio.populacao?.toLocaleString('pt-BR') || '-'],
     ['Exec. Orcamentaria', fmtPct(municipio.eorcam_raw)],
-    ['RP Processados', municipio.n_anos_cronicos != null ? `${municipio.n_anos_cronicos}a` : '-'],
+    ['RP Processados (recente)', fmtPct(municipio.rproc_pct_atual)],
     ['SICONFI', municipio.qsiconfi != null ? fmtPct(Number(municipio.qsiconfi) * 100, 0) : '-'],
     ['CAUC', fmtNum(municipio.ccauc, 2)],
     ['Lliq', fmtNum(municipio.lliq_raw, 3)],
@@ -367,11 +400,38 @@ function MunicipioSelecionado({ municipio }) {
         ))}
       </div>
 
-      <div style={{ display: 'flex', gap: '4px', flexWrap: 'wrap', marginTop: '10px' }}>
-        {getMunicipioAlertas(municipio).map((alerta) => (
-          <AlertaBadge key={alerta.label} label={alerta.label} cor={alerta.cor} />
-        ))}
-      </div>
+      {alertas.length || alertasCauc.length ? (
+        <div style={{ display: 'grid', gap: '8px', marginTop: '10px' }}>
+          {alertas.length ? (
+            <div style={{ display: 'flex', gap: '4px', flexWrap: 'wrap' }}>
+              {alertas.map((alerta) => (
+                <AlertaBadge key={alerta.label} label={alerta.label} cor={alerta.cor} />
+              ))}
+            </div>
+          ) : null}
+
+          {alertasCauc.length ? (
+            <div style={{ display: 'grid', gap: '6px' }}>
+              <div
+                style={{
+                  fontSize: '0.58rem',
+                  color: 'var(--text-lo)',
+                  textTransform: 'uppercase',
+                  letterSpacing: '0.08em',
+                  fontFamily: 'var(--mono)',
+                }}
+              >
+                Pendencias Federais
+              </div>
+              <div style={{ display: 'flex', gap: '4px', flexWrap: 'wrap' }}>
+                {alertasCauc.map((alerta) => (
+                  <AlertaBadge key={alerta.label} label={alerta.label} cor={alerta.cor} />
+                ))}
+              </div>
+            </div>
+          ) : null}
+        </div>
+      ) : null}
     </Painel>
   )
 }
@@ -559,7 +619,7 @@ export default function DashboardPage({ uf }) {
   const medianas = useMemo(
     () => ({
       'Exec. Orcamentaria (%)': fmtPct(mediana(municipios.map((municipio) => municipio.eorcam_raw))),
-      'RP Processados (contrib.)': fmtNum(mediana(municipios.map((municipio) => municipio.contrib_rproc)), 2),
+      'RP Processados (%)': fmtPct(mediana(municipios.map((municipio) => municipio.rproc_pct_atual))),
       'Conformidade SICONFI':
         mediana(municipios.map((municipio) => municipio.qsiconfi)) != null
           ? fmtPct(mediana(municipios.map((municipio) => municipio.qsiconfi)) * 100, 0)
@@ -1189,8 +1249,6 @@ export default function DashboardPage({ uf }) {
 
               <tbody>
                 {(tabelaExpandida ? municipiosFiltrados : municipiosFiltrados.slice(0, PREVIEW_LINHAS)).map((municipio, index) => {
-                  const alertasMunicipio = getMunicipioAlertas(municipio)
-
                   return (
                     <tr
                       key={municipio.cod_ibge || `${municipio.ente}-${index}`}
@@ -1232,10 +1290,10 @@ export default function DashboardPage({ uf }) {
                         style={{
                           padding: '5px 9px',
                           fontFamily: 'var(--mono)',
-                          color: Number(municipio.n_anos_cronicos) >= 5 ? '#ef4444' : 'var(--text-mid)',
+                          color: Number(municipio.rproc_pct_atual) > 3 ? '#ef4444' : 'var(--text-mid)',
                         }}
                       >
-                        {municipio.n_anos_cronicos != null ? `${municipio.n_anos_cronicos}a` : '-'}
+                        {fmtPct(municipio.rproc_pct_atual)}
                       </td>
                       <td style={{ padding: '5px 9px', color: 'var(--text-mid)', fontFamily: 'var(--mono)' }}>
                         {municipio.qsiconfi != null ? fmtPct(Number(municipio.qsiconfi) * 100, 0) : '-'}
@@ -1281,13 +1339,6 @@ export default function DashboardPage({ uf }) {
                         }}
                       >
                         {municipio.pct_dispensa != null ? fmtPct(Number(municipio.pct_dispensa) * 100) : '-'}
-                      </td>
-                      <td style={{ padding: '5px 9px' }}>
-                        <div style={{ display: 'flex', gap: '3px', flexWrap: 'wrap' }}>
-                          {alertasMunicipio.map((alerta) => (
-                            <AlertaBadge key={alerta.label} label={alerta.label} cor={alerta.cor} />
-                          ))}
-                        </div>
                       </td>
                     </tr>
                   )

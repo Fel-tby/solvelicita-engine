@@ -57,15 +57,16 @@ def _carregar_csv(uf: str) -> pd.DataFrame:
     df_rproc     = calcular_rproc(df_si, uf=uf)
     df_autonomia = calcular_autonomia(df_mu, uf=uf)
 
-    df_rpnp = (
-        df_si[df_si["entregou_rreo"] & df_si["rrestos_nproc_pct"].notna()]
+    df_rproc_atual = (
+        df_si[df_si["entregou_rreo"] & df_si["rproc_pct"].notna()]
         .sort_values(["cod_ibge", "ano"], ascending=[True, False])
         .groupby("cod_ibge").first().reset_index()
-        [["cod_ibge", "rrestos_nproc_pct"]]
+        [["cod_ibge", "rproc_pct"]]
+        .rename(columns={"rproc_pct": "rproc_pct_atual"})
     )
 
     df = df_mu[["cod_ibge", "ente", "populacao"]].copy()
-    for bloco in [df_eorcam, df_qsiconfi, df_cauc, df_autonomia, df_lliq, df_rpnp, df_rproc]:
+    for bloco in [df_eorcam, df_qsiconfi, df_cauc, df_autonomia, df_lliq, df_rproc_atual, df_rproc]:
         df = df.merge(bloco, on="cod_ibge", how="left")
 
     df["qsiconfi"]        = df["qsiconfi"].fillna(0)
@@ -149,12 +150,12 @@ def _carregar_bq(uf: str) -> pd.DataFrame:
         print(f"  💾 CAUC exportado local: {csv_cauc.name}")
 
     # Tipos — BQ retorna correto mas colunas com NULL viram object no pandas
-    for col in ["eorcam_raw", "lliq_raw", "autonomia_media",
+    for col in ["eorcam_raw", "lliq_raw", "autonomia_media", "rproc_pct_atual",
                 "decay_fator", "ccauc", "dias_atraso"]:
         if col in df.columns:
             df[col] = pd.to_numeric(df[col], errors="coerce")
 
-    for col in ["anos_entregues", "n_anos_cronicos"]:
+    for col in ["anos_entregues", "n_anos_cronicos", "n_graves", "n_moderadas", "n_leves"]:
         if col in df.columns:
             df[col] = pd.to_numeric(df[col], errors="coerce").fillna(0).astype(int)
 
@@ -264,8 +265,9 @@ def run(uf: str = "PB", source: str = "csv") -> pd.DataFrame:
     # exportação
     OUT_COLS = [
         "cod_ibge", "ente", "populacao", "score", "classificacao",
-        "anos_entregues", "eorcam_raw", "lliq_raw", "rrestos_nproc_pct",
+        "anos_entregues", "eorcam_raw", "lliq_raw", "rproc_pct_atual",
         "n_anos_cronicos", "qsiconfi", "ccauc", "autonomia_media",
+        "n_graves", "n_moderadas", "n_leves", "pendencias", "pendencias_cauc_json",
         "eorcam_norm", "lliq_norm", "rproc_norm", "autonomia_norm",
         "contrib_eorcam", "contrib_lliq", "contrib_qsiconfi",
         "contrib_ccauc", "contrib_autonomia", "contrib_rproc",

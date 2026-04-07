@@ -3,9 +3,8 @@ Coletor PNCP — Licitações por UF (Lei 14.133/2021).
 Responsabilidade: coletar registros paginados por modalidade/mês e
 salvar o JSONL de checkpoint incremental de forma assíncrona.
 
-A consolidação JSONL → CSV, flattening de campos aninhados e seleção
-de colunas é feita por:
-    src/processors/pncp_processor.py
+A consolidação do JSONL para carga bruta no BigQuery é feita ao final
+da coleta, preservando o contrato consumido por dbt/models/staging/stg_pncp.sql.
 
 Rodar individualmente:
     python src/collectors/pncp.py                      # full (desde 2025-01-01)
@@ -20,6 +19,7 @@ import time
 import asyncio
 import httpx
 import logging
+import pandas as pd
 from pathlib import Path
 from datetime import date, timedelta
 from calendar import monthrange
@@ -279,6 +279,67 @@ async def orquestrar_coleta(
     progresso.finalizar()
 
 
+def _consolidar_jsonl_para_raw(json_path: Path, uf: str) -> pd.DataFrame:
+    """
+    Consolida o JSONL do PNCP em DataFrame pronto para upload na camada raw.
+
+    O objetivo aqui e preservar o payload consumido por stg_pncp, ajustando
+    apenas uf e mes para o formato esperado no BigQuery.
+    """
+    if not json_path.exists():
+        return pd.DataFrame()
+
+    linhas = []
+    with open(json_path, "r", encoding="utf-8") as fj:
+        for linha in fj:
+            try:
+                obj = json.loads(linha)
+            except Exception:
+                continue
+            if obj.get("_sem_dados"):
+                continue
+            linhas.append(obj)
+
+    if not linhas:
+        return pd.DataFrame()
+
+    df = pd.DataFrame(linhas)
+
+    if "_uf" in df.columns:
+        df["uf"] = df["_uf"].fillna(uf.upper())
+        df.drop(columns=["_uf"], inplace=True)
+    else:
+        df["uf"] = uf.upper()
+
+    if "_mes" in df.columns:
+        df["mes"] = (
+            pd.to_datetime(df["_mes"].astype(str) + "-01", errors="coerce")
+            .dt.month
+            .astype("Int64")
+        )
+        df.drop(columns=["_mes"], inplace=True)
+    elif "dataPublicacaoPncp" in df.columns:
+        df["mes"] = (
+            pd.to_datetime(df["dataPublicacaoPncp"], errors="coerce")
+            .dt.month
+            .astype("Int64")
+        )
+
+    if "dataAtualizacaoGlobal" not in df.columns and "dataAtualizacao" in df.columns:
+        df["dataAtualizacaoGlobal"] = df["dataAtualizacao"]
+
+    return df
+
+
+def _upload_jsonl_para_bq(json_path: Path, uf: str) -> None:
+    df = _consolidar_jsonl_para_raw(json_path, uf)
+    if df.empty:
+        print("  [BQ] Aviso: nenhum registro PNCP valido para upload.")
+        return
+
+    upload_raw(df, table="pncp", uf=uf, write_mode="append")
+
+
 def run(mode: str = "full", uf: str = "PB") -> None:
     """
     Executa a coleta PNCP e salva o JSONL de checkpoint.
@@ -334,9 +395,11 @@ def run(mode: str = "full", uf: str = "PB") -> None:
     asyncio.run(orquestrar_coleta(uf, meses, snap_jsonl_novo, chaves_feitas))
 
     elapsed = time.time() - t0
+    print("  [BQ] Consolidando JSONL e enviando para raw.pncp...")
+    _upload_jsonl_para_bq(snap_jsonl_novo, uf)
     print(f"\n[SUCCESS] Coleta concluída em {elapsed / 60:.1f} min")
     print(f"  JSONL primário  : {snap_jsonl_novo.name}")
-    print(f"  Próximo passo   : python pipeline.py --steps process,score")
+    print(f"  Próximo passo   : python pipeline.py --steps dbt,process,score")
     print("=" * 65)
 
 

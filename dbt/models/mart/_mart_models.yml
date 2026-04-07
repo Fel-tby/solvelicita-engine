@@ -16,8 +16,11 @@ models:
         tests: [not_null]
       - name: n_anos_cronicos
         tests: [not_null]
+      - name: rproc_pct_atual
       - name: ccauc
         tests: [not_null]
+      - name: pendencias
+      - name: pendencias_cauc_json
 
   - name: mart_pncp_municipios
     description: >

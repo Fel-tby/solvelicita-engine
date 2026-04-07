@@ -38,6 +38,10 @@ models:
         tests: [not_null, unique]
       - name: n_anos_cronicos
         tests: [not_null]
+      - name: rproc_pct_atual
+        description: >
+          Percentual mais recente de restos processados em relação à receita
+          realizada, considerando o último ano com RREO válido.
 
   - name: int_qsiconfi
     description: >
@@ -58,6 +62,11 @@ models:
         tests: [not_null, unique]
       - name: ccauc
         tests: [not_null]
+      - name: pendencias
+      - name: pendencias_cauc_json
+        description: >
+          JSON serializado com a lista de pendências CAUC do município,
+          incluindo código, descrição e gravidade de cada item.
 
   - name: int_autonomia_base
     description: >

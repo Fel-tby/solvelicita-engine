@@ -37,6 +37,7 @@ WITH pendencias_long AS (
 pendentes AS (
     SELECT
         p.cod_ibge,
+        r.codigo,
         r.descricao,
         r.gravidade
     FROM pendencias_long p
@@ -53,7 +54,18 @@ agregado AS (
             descricao, ' | '
             ORDER BY CASE gravidade WHEN 'GRAVE' THEN 1 WHEN 'MODERADA' THEN 2 ELSE 3 END,
                      descricao
-        ) AS pendencias
+        ) AS pendencias,
+        TO_JSON_STRING(
+            ARRAY_AGG(
+                STRUCT(
+                    codigo    AS codigo,
+                    descricao AS descricao,
+                    gravidade AS gravidade
+                )
+                ORDER BY CASE gravidade WHEN 'GRAVE' THEN 1 WHEN 'MODERADA' THEN 2 ELSE 3 END,
+                         descricao
+            )
+        ) AS pendencias_cauc_json
     FROM pendentes
     GROUP BY cod_ibge
 )
@@ -66,6 +78,10 @@ SELECT
         WHEN a.cod_ibge IS NULL THEN 'REGULAR'
         ELSE a.pendencias
     END AS pendencias,
+    CASE
+        WHEN a.cod_ibge IS NULL THEN '[]'
+        ELSE a.pendencias_cauc_json
+    END AS pendencias_cauc_json,
     CASE
         WHEN a.cod_ibge IS NULL
           OR (COALESCE(a.n_graves,0) + COALESCE(a.n_moderadas,0) + COALESCE(a.n_leves,0)) = 0

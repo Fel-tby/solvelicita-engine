@@ -1,26 +1,22 @@
 """
-pipeline.py — Orquestrador central do SolveLicita v9.0
-Localização: raiz do projeto (ao lado de README.md).
+pipeline.py - Orquestrador central do SolveLicita v9.1
 
-Bloco 9: processors legados aposentados, etapa app removida.
-Caminho canônico: BigQuery → postprocessors → solvency → Supabase.
+Caminho canonico:
+BigQuery -> postprocessors -> solvency -> Supabase
 
 Uso:
-    python pipeline.py                                            # interativo
-    python pipeline.py --uf CE                                   # outro estado
-    python pipeline.py --mode full                               # força full
-    python pipeline.py --mode incremental                        # força incremental
-    python pipeline.py --steps process,score                     # pula coleta
-    python pipeline.py --steps score,sync                        # score + Supabase
-    python pipeline.py --uf CE --mode incremental --steps collect,score,sync
+    python pipeline.py
+    python pipeline.py --uf CE
+    python pipeline.py --uf ALL --steps process,score,sync
+    python pipeline.py --uf ALL --mode incremental --steps collect,dbt,process,score,sync
 
-Etapas disponíveis:
-    collect — coleta bruta (municipios, cauc, siconfi, dca, pncp)
-    process — postprocessors BigQuery (siconfi_postprocessor, dca_postprocessor)
-    score   — cálculo do score (solvency.py --source bigquery)
-    sync    — sincroniza com o Supabase
+Regras para --uf ALL:
+    - sem collect: aceita apenas process, score e sync
+    - com collect: faz somente coleta incremental de CAUC para cada UF presente,
+      depois roda dbt uma vez e process -> score -> sync para todas as UFs
 """
 
+import subprocess
 import sys
 import time
 from pathlib import Path
@@ -29,43 +25,29 @@ ROOT = Path(__file__).resolve().parent
 sys.path.insert(0, str(ROOT))
 sys.path.insert(0, str(ROOT / "src"))
 
-from src.collectors import municipios, cauc, siconfi, dca, pncp
-from src.processors import siconfi_postprocessor, dca_postprocessor
+from src.collectors import cauc, dca, municipios, pncp, siconfi
 from src.engine import solvency
+from src.processors import dca_postprocessor, siconfi_postprocessor
 from src.utils.paths import get_paths
 from src.utils.supabase_sync import run as supabase_sync
-import subprocess
 
 
 ETAPAS_VALIDAS = {"collect", "dbt", "process", "score", "sync"}
-ETAPAS_ORDEM   = ["collect", "dbt", "process", "score", "sync"]
+ETAPAS_ORDEM = ["collect", "dbt", "process", "score", "sync"]
+ALL_UFS_TOKEN = "ALL"
 
-
-# ── UI de seleção ──────────────────────────────────────────────────────────────
 
 def selecionar_uf() -> str:
     print()
-    print("  UF alvo (ex: PB, CE, RN). Enter = PB")
+    print("  UF alvo (ex: PB, CE, RN, ALL). Enter = PB")
     uf = input("  UF: ").strip().upper()
     return uf if uf else "PB"
 
 
 def selecionar_modo() -> str:
     print()
-    print("╔══════════════════════════════════════════════════════╗")
-    print("║         SolveLicita — Pipeline de Dados  v9.0      ║")
-    print("╠══════════════════════════════════════════════════════╣")
-    print("║                                                      ║")
-    print("║  [1] Full — histórico completo                      ║")
-    print("║      (use na primeira execução)                      ║")
-    print("║                                                      ║")
-    print("║  [2] Incremental — apenas período recente           ║")
-    print("║      (CAUC: snapshot atual                          ║")
-    print("║       SICONFI: ano anterior + corrente              ║")
-    print("║       DCA: último exercício                         ║")
-    print("║       PNCP: últimos 60 dias)                        ║")
-    print("║                                                      ║")
-    print("╚══════════════════════════════════════════════════════╝")
+    print("  [1] Full")
+    print("  [2] Incremental")
     print()
     while True:
         escolha = input("  Modo de coleta [1/2]: ").strip()
@@ -73,45 +55,48 @@ def selecionar_modo() -> str:
             return "full"
         if escolha == "2":
             return "incremental"
-        print("  Opção inválida. Digite 1 para Full ou 2 para Incremental.")
+        print("  Opcao invalida. Digite 1 para Full ou 2 para Incremental.")
 
 
 def selecionar_etapas() -> set[str]:
     print()
     print("  Etapas a executar:")
-    print("  [1] Todas (collect → dbt → process → score → sync)")
-    print("  [2] Todas sem sync (collect → dbt → process → score)")
-    print("  [3] process + score + sync (dados já coletados e dbt rodado)")
-    print("  [4] score + sync (postprocessors já rodaram)")
-    print("  [5] Apenas sync (score já calculado)")
+    print("  [1] Todas (collect -> dbt -> process -> score -> sync)")
+    print("  [2] Todas sem sync (collect -> dbt -> process -> score)")
+    print("  [3] process + score + sync (dados ja coletados e dbt rodado)")
+    print("  [4] score + sync (postprocessors ja rodaram)")
+    print("  [5] Apenas sync (score ja calculado)")
     print("  [6] Personalizado (digitar etapas)")
     print()
     while True:
         escolha = input("  Etapas [1/2/3/4/5/6]: ").strip()
-        if escolha == "1": return {"collect", "dbt", "process", "score", "sync"}
-        if escolha == "2": return {"collect", "dbt", "process", "score"}
-        if escolha == "3": return {"process", "score", "sync"}
-        if escolha == "4": return {"score", "sync"}
-        if escolha == "5": return {"sync"}
+        if escolha == "1":
+            return {"collect", "dbt", "process", "score", "sync"}
+        if escolha == "2":
+            return {"collect", "dbt", "process", "score"}
+        if escolha == "3":
+            return {"process", "score", "sync"}
+        if escolha == "4":
+            return {"score", "sync"}
+        if escolha == "5":
+            return {"sync"}
         if escolha == "6":
-            raw       = input("  Digite etapas (collect,dbt,process,score,sync): ").strip()
-            etapas    = {e.strip() for e in raw.split(",")}
+            raw = input("  Digite etapas (collect,dbt,process,score,sync): ").strip()
+            etapas = {e.strip() for e in raw.split(",") if e.strip()}
             invalidas = etapas - ETAPAS_VALIDAS
             if invalidas:
-                print(f"  Etapas inválidas: {invalidas}. Use: collect, dbt, process, score, sync.")
+                print(f"  Etapas invalidas: {invalidas}. Use: collect, dbt, process, score, sync.")
                 continue
             return etapas
-        print("  Opção inválida.")
+        print("  Opcao invalida.")
 
-
-# ── Etapas do pipeline ─────────────────────────────────────────────────────────
 
 def etapa_collect(mode: str, uf: str) -> None:
-    print("\n" + "═" * 55)
-    print(f"  ETAPA: COLETA [{mode.upper()}] — {uf}")
-    print("═" * 55)
+    print("\n" + "=" * 55)
+    print(f"  ETAPA: COLETA [{mode.upper()}] - {uf}")
+    print("=" * 55)
 
-    print("\n[1/5] Municípios...")
+    print("\n[1/5] Municipios...")
     municipios.run(uf=uf)
 
     print("\n[2/5] CAUC...")
@@ -127,49 +112,51 @@ def etapa_collect(mode: str, uf: str) -> None:
     pncp.run(mode=mode, uf=uf)
 
 
+def etapa_collect_cauc_incremental_all(ufs: list[str]) -> None:
+    print("\n" + "=" * 55)
+    print("  ETAPA: COLETA INCREMENTAL CAUC - ALL")
+    print("=" * 55)
+
+    total = len(ufs)
+    for idx, uf in enumerate(ufs, start=1):
+        print(f"\n[{idx}/{total}] CAUC incremental - {uf}...")
+        cauc.run(uf=uf)
+
+
 def etapa_dbt(uf: str) -> None:
-    print("\n" + "═" * 55)
-    print(f"  ETAPA: DBT TRANSFORM — {uf}")
-    print("═" * 55)
+    print("\n" + "=" * 55)
+    print(f"  ETAPA: DBT TRANSFORM - {uf}")
+    print("=" * 55)
 
     print("\n[1/1] Rodando modelos do dbt no BigQuery (via venv_dbt)...")
-    
-    import platform
+
     import os
+    import platform
+
     if platform.system() == "Windows":
         dbt_exe = ROOT / "venv_dbt" / "Scripts" / "dbt.exe"
     else:
         dbt_exe = ROOT / "venv_dbt" / "bin" / "dbt"
 
     if not dbt_exe.exists():
-        print(f"  ⚠️ Executável dbt não encontrado em: {dbt_exe}")
+        print(f"  Aviso: executavel dbt nao encontrado em: {dbt_exe}")
         sys.exit(1)
 
-    # Resolve o caminho do json de credenciais do GCP para absoluto
-    # Para garantir que o dbt encontre o arquivo estando na pasta "dbt/"
     env = os.environ.copy()
     sa_path = env.get("GCP_SA_KEY_PATH")
     if sa_path and not Path(sa_path).is_absolute():
         env["GCP_SA_KEY_PATH"] = str((ROOT / sa_path).resolve())
 
-    # Se houver necessidade futura de filtrar por UF no dbt, passamos a variável uf_filter aqui
-    # ex: [str(dbt_exe), "run", "--vars", f'{{"uf_filter": "{uf}"}}']
     res = subprocess.run([str(dbt_exe), "run"], cwd=str(ROOT / "dbt"), env=env)
     if res.returncode != 0:
-        print("  ⚠️ Erro na execução do dbt.")
+        print("  Aviso: erro na execucao do dbt.")
         sys.exit(res.returncode)
 
 
 def etapa_process(uf: str) -> None:
-    """
-    Postprocessors BigQuery — preenchem as colunas NULL deixadas pelo dbt.
-    siconfi_postprocessor: eorcam_raw, lliq_raw, lliq_parcial, dias_atraso,
-                           decay_fator, dado_suspeito_lliq, dado_defasado.
-    dca_postprocessor:     autonomia_media, autonomia_critica.
-    """
-    print("\n" + "═" * 55)
-    print(f"  ETAPA: POSTPROCESSORS BigQuery — {uf}")
-    print("═" * 55)
+    print("\n" + "=" * 55)
+    print(f"  ETAPA: POSTPROCESSORS BigQuery - {uf}")
+    print("=" * 55)
 
     print("\n[1/2] SICONFI postprocessor...")
     siconfi_postprocessor.run(uf=uf)
@@ -179,75 +166,120 @@ def etapa_process(uf: str) -> None:
 
 
 def etapa_score(uf: str) -> None:
-    """
-    Lê mart_indicadores_municipios (BigQuery), calcula o score completo
-    e enriquece com dados PNCP.
-    """
-    print("\n" + "═" * 55)
-    print(f"  ETAPA: SCORE — {uf}")
-    print("═" * 55)
+    print("\n" + "=" * 55)
+    print(f"  ETAPA: SCORE - {uf}")
+    print("=" * 55)
 
     print("\n[1/1] Solvency engine (source=bigquery)...")
     solvency.run(uf=uf, source="bigquery")
 
 
 def etapa_sync(uf: str) -> None:
-    """
-    Lê outputs/{UF}/score_municipios_{u}_pncp.csv e faz upsert no Supabase.
-    """
-    print("\n" + "═" * 55)
-    print(f"  ETAPA: SYNC — Supabase — {uf}")
-    print("═" * 55)
+    print("\n" + "=" * 55)
+    print(f"  ETAPA: SYNC - Supabase - {uf}")
+    print("=" * 55)
 
     print("\n[1/1] Sincronizando com Supabase...")
     supabase_sync(uf=uf)
 
 
-# ── Main ───────────────────────────────────────────────────────────────────────
+def descobrir_ufs_presentes(*, for_sync_only: bool = False) -> list[str]:
+    if for_sync_only:
+        base = ROOT / "data" / "outputs"
+        ufs = []
+        if base.exists():
+            for item in sorted(base.iterdir()):
+                if not item.is_dir():
+                    continue
+                uf = item.name.upper()
+                score_csv = item / f"score_municipios_{uf.lower()}_pncp.csv"
+                if score_csv.exists():
+                    ufs.append(uf)
+        return ufs
+
+    base = ROOT / "data" / "processed"
+    ufs = []
+    if base.exists():
+        for item in sorted(base.iterdir()):
+            if not item.is_dir():
+                continue
+            uf = item.name.upper()
+            tabela_mun = item / f"municipios_{uf.lower()}_tabela.csv"
+            if tabela_mun.exists():
+                ufs.append(uf)
+    return ufs
+
+
+def validar_uf_all(mode: str, etapas: set[str]) -> list[str]:
+    permitido_sem_collect = {"process", "score", "sync"}
+    permitido_com_collect = {"collect", "dbt", "process", "score", "sync"}
+
+    if "collect" in etapas:
+        if etapas != permitido_com_collect:
+            print(
+                "  Erro: com --uf ALL + collect, o fluxo permitido e exatamente "
+                "collect,dbt,process,score,sync."
+            )
+            sys.exit(1)
+        if mode != "incremental":
+            print("  Erro: com --uf ALL + collect, o modo deve ser incremental.")
+            sys.exit(1)
+        ufs = descobrir_ufs_presentes()
+    else:
+        if not etapas.issubset(permitido_sem_collect):
+            print(
+                "  Erro: --uf ALL sem collect aceita apenas etapas entre "
+                "process,score,sync."
+            )
+            sys.exit(1)
+        ufs = descobrir_ufs_presentes(for_sync_only=(etapas == {"sync"}))
+
+    if not ufs:
+        print("  Erro: nenhuma UF coletada foi encontrada no workspace para --uf ALL.")
+        sys.exit(1)
+
+    return ufs
+
 
 def main() -> None:
     args = sys.argv[1:]
 
-    # Resolve uf
     if "--uf" in args:
         idx = args.index("--uf")
-        uf  = args[idx + 1].upper() if idx + 1 < len(args) else "PB"
+        uf = args[idx + 1].upper() if idx + 1 < len(args) else "PB"
     else:
         uf_inline = next((a.split("=", 1)[1] for a in args if a.startswith("--uf=")), None)
-        uf        = uf_inline.upper() if uf_inline else None
+        uf = uf_inline.upper() if uf_inline else None
 
-    # Resolve mode
     if "--mode" in args:
-        idx  = args.index("--mode")
+        idx = args.index("--mode")
         mode = args[idx + 1] if idx + 1 < len(args) else None
         if mode not in ("full", "incremental"):
             print(f"  Erro: --mode deve ser 'full' ou 'incremental'. Recebido: '{mode}'")
             sys.exit(1)
     else:
         mode_inline = next((a.split("=", 1)[1] for a in args if a.startswith("--mode=")), None)
-        mode        = mode_inline if mode_inline in ("full", "incremental") else None
+        mode = mode_inline if mode_inline in ("full", "incremental") else None
 
-    # Resolve etapas
     if "--steps" in args:
-        idx    = args.index("--steps")
-        raw    = args[idx + 1] if idx + 1 < len(args) else ""
-        etapas = {e.strip() for e in raw.split(",")}
+        idx = args.index("--steps")
+        raw = args[idx + 1] if idx + 1 < len(args) else ""
+        etapas = {e.strip() for e in raw.split(",") if e.strip()}
         invalidas = etapas - ETAPAS_VALIDAS
         if invalidas:
-            print(f"  Erro: etapas inválidas: {invalidas}. Use: collect, process, score, sync.")
+            print(f"  Erro: etapas invalidas: {invalidas}. Use: collect, dbt, process, score, sync.")
             sys.exit(1)
     else:
         steps_inline = next((a.split("=", 1)[1] for a in args if a.startswith("--steps=")), None)
         if steps_inline:
-            etapas    = {e.strip() for e in steps_inline.split(",")}
+            etapas = {e.strip() for e in steps_inline.split(",") if e.strip()}
             invalidas = etapas - ETAPAS_VALIDAS
             if invalidas:
-                print(f"  Erro: etapas inválidas: {invalidas}.")
+                print(f"  Erro: etapas invalidas: {invalidas}.")
                 sys.exit(1)
         else:
             etapas = None
 
-    # Interatividade — só pergunta o que não veio via CLI
     if uf is None:
         uf = selecionar_uf()
 
@@ -260,50 +292,72 @@ def main() -> None:
     if etapas is None:
         etapas = selecionar_etapas()
 
-    # Garante diretórios da UF antes de qualquer etapa
-    get_paths(uf)
+    ufs_all = None
+    if uf == ALL_UFS_TOKEN:
+        ufs_all = validar_uf_all(mode, etapas)
 
-    # Sumário
-    etapas_str = " → ".join(e for e in ETAPAS_ORDEM if e in etapas)
+    if uf != ALL_UFS_TOKEN:
+        get_paths(uf)
+
+    etapas_str = " -> ".join(e for e in ETAPAS_ORDEM if e in etapas)
+    alvo_str = ", ".join(ufs_all) if ufs_all else uf
 
     print()
-    print("  ┌─────────────────────────────────────────────┐")
-    print(f"  │  UF    : {uf:<33}│")
-    print(f"  │  Modo  : {mode:<33}│")
-    print(f"  │  Etapas: {etapas_str:<33}│")
-    print("  └─────────────────────────────────────────────┘")
+    print("  ---------------------------------------------")
+    print(f"  UF    : {alvo_str}")
+    print(f"  Modo  : {mode}")
+    print(f"  Etapas: {etapas_str}")
+    print("  ---------------------------------------------")
     print()
     input("  Pressione Enter para iniciar ou Ctrl+C para cancelar...")
 
     t0 = time.time()
 
     try:
-        if "collect" in etapas:
-            etapa_collect(mode, uf)
+        if uf == ALL_UFS_TOKEN:
+            assert ufs_all is not None
 
-        if "dbt" in etapas:
-            etapa_dbt(uf)
+            if "collect" in etapas:
+                etapa_collect_cauc_incremental_all(ufs_all)
 
-        if "process" in etapas:
-            etapa_process(uf)
+            if "dbt" in etapas:
+                etapa_dbt("ALL")
 
-        if "score" in etapas:
-            etapa_score(uf)
+            if "process" in etapas:
+                for uf_item in ufs_all:
+                    etapa_process(uf_item)
 
-        if "sync" in etapas:
-            etapa_sync(uf)
+            if "score" in etapas:
+                for uf_item in ufs_all:
+                    etapa_score(uf_item)
+
+            if "sync" in etapas:
+                for uf_item in ufs_all:
+                    etapa_sync(uf_item)
+        else:
+            if "collect" in etapas:
+                etapa_collect(mode, uf)
+
+            if "dbt" in etapas:
+                etapa_dbt(uf)
+
+            if "process" in etapas:
+                etapa_process(uf)
+
+            if "score" in etapas:
+                etapa_score(uf)
+
+            if "sync" in etapas:
+                etapa_sync(uf)
 
     except KeyboardInterrupt:
-        print("\n\n  Pipeline interrompido pelo usuário.")
+        print("\n\n  Pipeline interrompido pelo usuario.")
         sys.exit(0)
 
     elapsed = time.time() - t0
     print()
-    print("╔══════════════════════════════════════════════════════╗")
-    print(f"║  ✅ Pipeline concluído em {elapsed/60:.1f} min"
-          + " " * (27 - len(f"{elapsed/60:.1f}")) + "║")
-    print("║  Dashboard: https://solvelicita.tech                ║")
-    print("╚══════════════════════════════════════════════════════╝")
+    print(f"  Pipeline concluido em {elapsed/60:.1f} min")
+    print("  Dashboard: https://solvelicita.tech")
     print()
 
 

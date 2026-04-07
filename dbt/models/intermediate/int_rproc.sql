@@ -49,6 +49,20 @@ com_pct AS (
         END AS rproc_pct
     FROM pivot
 ),
+mais_recente AS (
+    SELECT
+        cod_ibge,
+        ROUND(rproc_pct, 2) AS rproc_pct_atual
+    FROM (
+        SELECT
+            *,
+            ROW_NUMBER() OVER (PARTITION BY cod_ibge ORDER BY ano DESC) AS rn
+        FROM com_pct
+        WHERE entregou_rreo
+          AND rproc_pct IS NOT NULL
+    )
+    WHERE rn = 1
+),
 contagem AS (
     SELECT
         cod_ibge,
@@ -66,6 +80,8 @@ spine AS (
 )
 SELECT
     s.cod_ibge,
-    COALESCE(c.n_anos_cronicos, 0) AS n_anos_cronicos
+    COALESCE(c.n_anos_cronicos, 0) AS n_anos_cronicos,
+    mr.rproc_pct_atual
 FROM spine s
 LEFT JOIN contagem c ON s.cod_ibge = c.cod_ibge
+LEFT JOIN mais_recente mr ON s.cod_ibge = mr.cod_ibge
