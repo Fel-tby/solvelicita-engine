@@ -1,13 +1,12 @@
-# SolveLicita — Dashboard
+## Runtime Dependencies
 
-Dashboard interativo de capacidade de pagamento dos municípios da Paraíba, construído em Next.js e publicado em tempo real a partir dos dados do pipeline SolveLicita.
+Para manter a futura divisao entre repositorios simples, o frontend hoje assume
+somente estas dependencias externas:
 
-Os dados são atualizados a cada execução do pipeline e armazenados no Supabase. O frontend os consulta diretamente — sem build necessário para refletir novos scores.
+- public Supabase credentials (`NEXT_PUBLIC_SUPABASE_URL` and `NEXT_PUBLIC_SUPABASE_ANON_KEY`)
+- o contrato de dados publicado na tabela `municipios`
+- os GeoJSONs publicados em `frontend/public/*_geo.geojson`
+- o asset `frontend/lib/brazilMapData.js` usado no mapa da home
 
-## O que mostra
-
-- **Mapa coroplético** dos 223 municípios classificados por faixa de risco de solvência
-- **Ranking completo** com ordenação por qualquer indicador: score, execução orçamentária, CAUC, Lliq, autonomia tributária, % de dispensa e outros
-- **Alertas por município**: dispensa acima de 30%, dado suspeito, autonomia crítica, RP crônico
-- **Medianas estaduais** dos principais indicadores fiscais
-- **Filtros** por classificação, faixa de score e nome do município
+O contrato detalhado esta documentado em
+[`docs/frontend-runtime-contract.md`](../docs/frontend-runtime-contract.md).

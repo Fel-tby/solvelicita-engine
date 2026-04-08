@@ -2,6 +2,35 @@ import { supabase } from './supabase'
 import { RISK_ORDER, normalizeRisk } from './risk'
 import { UF_METADATA, UF_METADATA_BY_UF } from './siteData'
 
+// Explicit frontend contract: these are the only Supabase columns required by
+// the Next.js app at runtime today. Narrowing this query makes a future repo
+// split safer without changing current site behavior.
+export const MUNICIPIOS_SELECT_FIELDS = [
+  'uf',
+  'cod_ibge',
+  'ente',
+  'populacao',
+  'score',
+  'classificacao',
+  'lliq_raw',
+  'eorcam_raw',
+  'rproc_pct_atual',
+  'qsiconfi',
+  'ccauc',
+  'autonomia_media',
+  'pendencias_cauc_json',
+  'n_anos_cronicos',
+  'dado_defasado',
+  'dado_suspeito',
+  'autonomia_critica',
+  'n_licitacoes',
+  'valor_homologado_total',
+  'pct_dispensa',
+  'alerta_dispensa',
+]
+
+const MUNICIPIOS_SELECT = MUNICIPIOS_SELECT_FIELDS.join(',')
+
 const UF_CANDIDATE_KEYS = [
   'uf',
   'sigla_uf',
@@ -37,7 +66,7 @@ export async function fetchMunicipios() {
     // Supabase REST limits unpaginated selects to 1000 rows by default.
     const { data, error } = await supabase
       .from('municipios')
-      .select('*')
+      .select(MUNICIPIOS_SELECT)
       .order('cod_ibge', { ascending: true })
       .range(from, from + SUPABASE_PAGE_SIZE - 1)
 
@@ -60,7 +89,7 @@ export async function fetchMunicipiosByUf(uf) {
   try {
     const { data, error } = await supabase
       .from('municipios')
-      .select('*')
+      .select(MUNICIPIOS_SELECT)
       .eq('uf', normalizedUf)
       .order('cod_ibge', { ascending: true })
 
