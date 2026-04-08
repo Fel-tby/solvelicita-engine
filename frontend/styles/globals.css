@@ -1,14 +1,30 @@
 ﻿*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
 
 :root {
-  --text: #1a1a1a;
-  --text-mid: #555;
-  --text-light: #888;
-  --bg: #fff;
-  --bg-soft: #f7f7f5;
-  --border: #e5e5e0;
-  --accent: #3b5bdb;
-  --accent-bg: #eef1ff;
+  --bg-page: #f3f4f6;
+  --bg-sidebar: #f8f9fa;
+  --bg-card: #ffffff;
+  --bg-card-alt: #f8fafc;
+  --bg-header: #f1f5f9;
+  --bg-panel: #ffffff;
+
+  --text-hi: #111827;
+  --text-lo: #6b7280;
+  --text-inv: #ffffff;
+
+  --border: #e5e7eb;
+  --border-dim: #f0f0f0;
+
+  --accent: #185FA5;
+  --accent-hover: #125189;
+  --accent-rgb: 24, 95, 165;
+
+  --text: #111827;
+  --text-mid: #4b5563;
+  --text-light: #6b7280;
+  --bg: #ffffff;
+  --bg-soft: #f8fafc;
+  --accent-bg: #e8f1fb;
   --green: #2f9e44;
   --green-bg: #ebfbee;
   --yellow: #e67700;
@@ -17,13 +33,8 @@
   --red-bg: #fff5f5;
   --gray: #868e96;
   --gray-bg: #f1f3f5;
-  --mono: 'DM Mono', monospace;
+  --mono: 'JetBrains Mono', 'Fira Mono', 'Courier New', monospace;
   --sans: 'DM Sans', system-ui, sans-serif;
-  --text-hi: #f0f0f4;
-  --text-lo: #64748b;
-  --bg-card: #111827;
-  --bg-panel: #0b1220;
-  --border-dim: #243041;
   --risk-baixo: #22c55e;
   --risk-medio: #f59e0b;
   --risk-alto: #ef4444;
@@ -33,6 +44,10 @@
 
 html { scroll-behavior: smooth; scroll-padding-top: 56px; }
 body { font-family: var(--sans); font-size: 16px; line-height: 1.6; color: var(--text); background: var(--bg); }
+
+section#dados.section.active {
+  background: var(--bg-page);
+}
 
 /* NAV */
 nav {
@@ -200,7 +215,7 @@ nav {
 .score-row:last-child { border-bottom: none; }
 .score-row-left {}
 .score-row-name { font-weight: 500; font-size: 0.875rem; margin-bottom: 0.15rem; }
-.score-row-fonte { font-size: 0.75rem; color: var(--text-light); font-family: var(--mono); }
+.score-row-fonte { font-size: 0.75rem; color: var(--text-light); font-family: var(--sans); font-weight: 500; }
 .score-row-desc { font-size: 0.8rem; color: var(--text-mid); margin-top: 0.2rem; }
 .score-pct { font-size: 0.85rem; font-weight: 600; color: var(--text); white-space: nowrap; min-width: 36px; text-align: right; }
 .score-bar-wrap { width: 60px; height: 4px; background: var(--border); border-radius: 2px; }
@@ -626,7 +641,8 @@ footer {
   max-width: 800px; margin: 0 auto; padding: 0 2rem 4rem;
 }
 .score-example-tag {
-  font-size: 0.72rem; font-family: var(--mono); text-transform: uppercase;
+  font-size: 0.72rem; font-family: var(--sans); text-transform: uppercase;
+  font-weight: 600;
   letter-spacing: 0.09em; color: var(--text-light);
   margin-bottom: 1rem; display: flex; align-items: center; gap: 0.5rem;
 }
@@ -643,7 +659,7 @@ footer {
   border-bottom: 1px solid var(--border);
 }
 .sce-mun-name { font-size: 1.1rem; font-weight: 600; letter-spacing: -0.01em; }
-.sce-mun-meta { font-size: 0.75rem; color: var(--text-light); font-family: var(--mono); margin-top: 0.2rem; }
+.sce-mun-meta { font-size: 0.75rem; color: var(--text-light); font-family: var(--sans); margin-top: 0.2rem; }
 .sce-score-block { text-align: right; flex-shrink: 0; }
 .sce-score-n { font-size: 2.2rem; font-weight: 600; letter-spacing: -0.04em; line-height: 1; color: var(--text); }
 .sce-score-badge {
@@ -665,16 +681,17 @@ footer {
 .sce-ind:nth-last-child(-n+2) { border-bottom: none; }
 .sce-ind-header { display: flex; justify-content: space-between; align-items: baseline; margin-bottom: 0.45rem; }
 .sce-ind-name { font-size: 0.8rem; font-weight: 500; }
-.sce-ind-pct { font-size: 0.7rem; color: var(--text-light); font-family: var(--mono); }
+.sce-ind-pct { font-size: 0.7rem; color: var(--text-light); font-family: var(--sans); font-weight: 500; }
 .sce-bar-track { height: 4px; background: var(--border); border-radius: 2px; }
 .sce-bar-fill  { height: 4px; border-radius: 2px; }
-.sce-ind-val { font-size: 0.72rem; font-family: var(--mono); color: var(--text-mid); margin-top: 0.35rem; }
+.sce-ind-val { font-size: 0.72rem; font-family: var(--sans); color: var(--text-mid); margin-top: 0.35rem; }
 .sce-bottom {
   padding: 0.9rem 1.75rem;
   display: flex; align-items: center; gap: 0.5rem; background: var(--bg-soft);
 }
 .sce-flag {
-  font-size: 0.68rem; font-family: var(--mono);
+  font-size: 0.68rem; font-family: var(--sans);
+  font-weight: 600;
   color: var(--yellow); background: var(--yellow-bg);
   padding: 0.15rem 0.5rem; border-radius: 3px;
 }
@@ -719,7 +736,7 @@ footer {
 }
 .fonte-sigla {
   font-size: 1rem; font-weight: 700; letter-spacing: -0.01em;
-  color: var(--text); font-family: var(--mono); margin-bottom: 0.25rem;
+  color: var(--text); font-family: var(--sans); margin-bottom: 0.25rem;
 }
 .fonte-inst { font-size: 0.72rem; color: var(--text-light); margin-bottom: 0.5rem; }
 .fonte-desc { font-size: 0.75rem; color: var(--text-mid); line-height: 1.5; }
@@ -770,7 +787,8 @@ footer {
 }
 .brazil-map-label {
   font-size: 0.72rem;
-  font-family: var(--mono);
+  font-family: var(--sans);
+  font-weight: 600;
   color: var(--text-light);
   letter-spacing: 0.08em;
   text-transform: uppercase;

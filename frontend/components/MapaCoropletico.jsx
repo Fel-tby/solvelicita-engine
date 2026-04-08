@@ -43,9 +43,9 @@ export default function MapaCoropletico({ geoData, municipios, ibgesFiltrados, c
       const ativo = ibgesFiltrados.has(ibge)
 
       layer.setStyle({
-        fillColor: municipio ? corPorScore(municipio.score) : '#374151',
+        fillColor: municipio ? corPorScore(municipio.score) : '#cbd5e1',
         fillOpacity: ativo ? 0.85 : 0.15,
-        color: '#080b11',
+        color: '#cbd5e1',
         weight: 0.5,
       })
     })
@@ -56,9 +56,9 @@ export default function MapaCoropletico({ geoData, municipios, ibgesFiltrados, c
     const municipio = scoreMap[ibge]
 
     return {
-      fillColor: municipio ? corPorScore(municipio.score) : '#374151',
+      fillColor: municipio ? corPorScore(municipio.score) : '#cbd5e1',
       fillOpacity: ibgesFiltrados.has(ibge) ? 0.85 : 0.15,
-      color: '#080b11',
+      color: '#cbd5e1',
       weight: 0.5,
     }
   }
@@ -69,7 +69,7 @@ export default function MapaCoropletico({ geoData, municipios, ibgesFiltrados, c
     if (!municipio) return
 
     layer.bindTooltip(
-      `<div style="font-family:'DM Mono',monospace;font-size:11px;background:#1e2433;color:#e2e8f0;padding:5px 8px;border-radius:2px;border:1px solid #2d3748"><strong>${municipio.ente}</strong> · ${municipio.score != null ? Number(municipio.score).toFixed(1) : '-'}</div>`,
+      `<div style="font-family:var(--sans);font-size:12px;background:var(--bg-card);color:var(--text-hi);padding:8px 10px;border-radius:8px;border:1px solid var(--border);box-shadow:0 10px 22px rgba(15,23,42,0.08)"><strong style="display:block;font-size:12px;margin-bottom:2px">${municipio.ente}</strong><span style="font-family:var(--mono);font-size:11px;color:var(--text-lo)">Score ${municipio.score != null ? Number(municipio.score).toFixed(1) : '-'}</span></div>`,
       { sticky: true, opacity: 1 },
     )
 
@@ -80,17 +80,17 @@ export default function MapaCoropletico({ geoData, municipios, ibgesFiltrados, c
       },
       mouseout: (event) => {
         const ativo = ibgesFiltrados.has(ibge)
-        event.target.setStyle({ fillOpacity: ativo ? 0.85 : 0.15, weight: 0.5, color: '#080b11' })
+        event.target.setStyle({ fillOpacity: ativo ? 0.85 : 0.15, weight: 0.5, color: '#cbd5e1' })
       },
       click: () => onSelect?.(municipio),
     })
   }
 
   return (
-    <MapContainer center={[-14.235, -51.9253]} zoom={4} style={{ height: '100%', width: '100%', background: '#0a0d14' }} zoomControl>
+    <MapContainer center={[-14.235, -51.9253]} zoom={4} style={{ height: '100%', width: '100%', background: '#f8fafc' }} zoomControl>
       {geoData ? <FitGeoJson geoData={geoData} /> : null}
       <TileLayer
-        url="https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png"
+        url="https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png"
         attribution='&copy; <a href="https://carto.com">CARTO</a>'
       />
       <GeoJSON ref={geoJsonRef} data={geoData} style={estilo} onEachFeature={onEachFeature} />

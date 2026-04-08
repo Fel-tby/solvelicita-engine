@@ -12,9 +12,9 @@ const MapaCoropletico = dynamic(() => import('./MapaCoropletico'), {
         alignItems: 'center',
         justifyContent: 'center',
         color: 'var(--text-lo)',
-        fontFamily: 'var(--mono)',
-        fontSize: '0.75rem',
-        letterSpacing: '0.1em',
+        fontFamily: 'var(--sans)',
+        fontSize: '0.9rem',
+        fontWeight: 500,
       }}
     >
       CARREGANDO MAPA...
@@ -133,12 +133,11 @@ function BadgeRisco({ classe }) {
     <span
       style={{
         display: 'inline-block',
-        padding: '1px 6px',
-        borderRadius: '2px',
-        fontSize: '0.68rem',
-        fontFamily: 'var(--mono)',
-        fontWeight: 700,
-        letterSpacing: '0.06em',
+        padding: '4px 10px',
+        borderRadius: '999px',
+        fontSize: '0.72rem',
+        fontFamily: 'var(--sans)',
+        fontWeight: 600,
         color: cor,
         background: `${cor}22`,
         border: `1px solid ${cor}44`,
@@ -155,16 +154,16 @@ function AlertaBadge({ label, cor = '#f59e0b' }) {
       style={{
         display: 'inline-flex',
         alignItems: 'center',
-        gap: '3px',
-        padding: '1px 5px',
-        borderRadius: '2px',
-        fontSize: '0.62rem',
-        fontFamily: 'var(--mono)',
-        fontWeight: 700,
+        gap: '4px',
+        padding: '4px 8px',
+        borderRadius: '999px',
+        fontSize: '0.68rem',
+        fontFamily: 'var(--sans)',
+        fontWeight: 600,
         color: cor,
         background: `${cor}18`,
         border: `1px solid ${cor}33`,
-        lineHeight: 1.2,
+        lineHeight: 1.3,
         whiteSpace: 'normal',
         maxWidth: '100%',
       }}
@@ -201,23 +200,22 @@ function KPI({ label, value, destaque }) {
     <div
       style={{
         background: 'var(--bg-card)',
-        border: '1px solid var(--border-dim)',
+        border: '1px solid var(--border)',
         borderTop: `3px solid ${destaque || 'var(--border-dim)'}`,
-        padding: '8px 10px',
-        borderRadius: '3px',
+        padding: '12px 14px',
+        borderRadius: '10px',
         flex: 1,
         minWidth: 0,
       }}
     >
       <div
         style={{
-          fontSize: '0.55rem',
+          fontSize: '0.72rem',
           color: 'var(--text-lo)',
-          textTransform: 'uppercase',
-          letterSpacing: '0.06em',
-          fontFamily: 'var(--mono)',
-          marginBottom: '3px',
-          lineHeight: 1.3,
+          fontFamily: 'var(--sans)',
+          fontWeight: 500,
+          marginBottom: '6px',
+          lineHeight: 1.35,
           wordBreak: 'break-word',
         }}
       >
@@ -225,11 +223,12 @@ function KPI({ label, value, destaque }) {
       </div>
       <div
         style={{
-          fontSize: '1.3rem',
+          fontSize: '1.5rem',
           fontWeight: 700,
           color: 'var(--text-hi)',
-          fontFamily: 'var(--mono)',
+          fontFamily: 'var(--sans)',
           lineHeight: 1.1,
+          fontVariantNumeric: 'tabular-nums lining-nums',
         }}
       >
         {value}
@@ -242,14 +241,13 @@ function PainelTitulo({ children }) {
   return (
     <div
       style={{
-        fontSize: '0.6rem',
-        textTransform: 'uppercase',
-        letterSpacing: '0.1em',
-        color: 'var(--text-lo)',
-        fontFamily: 'var(--mono)',
-        paddingBottom: '7px',
-        marginBottom: '9px',
-        borderBottom: '1px solid var(--border-dim)',
+        fontSize: '0.78rem',
+        color: 'var(--text-mid)',
+        fontFamily: 'var(--sans)',
+        fontWeight: 600,
+        paddingBottom: '10px',
+        marginBottom: '12px',
+        borderBottom: '1px solid var(--border)',
       }}
     >
       {children}
@@ -262,9 +260,9 @@ function Painel({ children, style }) {
     <div
       style={{
         background: 'var(--bg-panel)',
-        border: '1px solid var(--border-dim)',
-        borderRadius: '3px',
-        padding: '12px 14px',
+        border: '1px solid var(--border)',
+        borderRadius: '12px',
+        padding: '16px 18px',
         ...style,
       }}
     >
@@ -298,8 +296,8 @@ function MunicipioSelecionado({ municipio }) {
         <div
           style={{
             color: 'var(--text-lo)',
-            fontFamily: 'var(--mono)',
-            fontSize: '0.72rem',
+            fontFamily: 'var(--sans)',
+            fontSize: '0.92rem',
             lineHeight: 1.8,
           }}
         >
@@ -343,11 +341,11 @@ function MunicipioSelecionado({ municipio }) {
           <PainelTitulo>Municipio Selecionado</PainelTitulo>
           <div
             style={{
-              fontSize: '1rem',
+              fontSize: '1.4rem',
               color: 'var(--text-hi)',
               fontWeight: 700,
-              fontFamily: 'var(--mono)',
-              letterSpacing: '0.04em',
+              fontFamily: 'var(--sans)',
+              lineHeight: 1.2,
             }}
           >
             {municipio.ente}
@@ -368,30 +366,30 @@ function MunicipioSelecionado({ municipio }) {
             key={label}
             style={{
               padding: '8px 9px',
-              background: 'var(--bg-card)',
+              background: 'var(--bg-card-alt)',
               border: '1px solid var(--border-dim)',
-              borderRadius: '3px',
+              borderRadius: '8px',
             }}
           >
             <div
               style={{
-                fontSize: '0.58rem',
+                fontSize: '0.72rem',
                 color: 'var(--text-lo)',
-                textTransform: 'uppercase',
-                letterSpacing: '0.08em',
-                fontFamily: 'var(--mono)',
-                marginBottom: '4px',
+                fontFamily: 'var(--sans)',
+                fontWeight: 500,
+                marginBottom: '6px',
               }}
             >
               {label}
             </div>
             <div
               style={{
-                fontSize: '0.78rem',
+                fontSize: '0.96rem',
                 color: 'var(--text-hi)',
-                fontFamily: 'var(--mono)',
+                fontFamily: 'var(--sans)',
                 fontWeight: 600,
                 lineHeight: 1.4,
+                fontVariantNumeric: 'tabular-nums lining-nums',
               }}
             >
               {value}
@@ -414,11 +412,10 @@ function MunicipioSelecionado({ municipio }) {
             <div style={{ display: 'grid', gap: '6px' }}>
               <div
                 style={{
-                  fontSize: '0.58rem',
+                  fontSize: '0.72rem',
                   color: 'var(--text-lo)',
-                  textTransform: 'uppercase',
-                  letterSpacing: '0.08em',
-                  fontFamily: 'var(--mono)',
+                  fontFamily: 'var(--sans)',
+                  fontWeight: 600,
                 }}
               >
                 Pendencias Federais
@@ -658,7 +655,7 @@ export default function DashboardPage({ uf }) {
           display: 'flex',
           alignItems: 'center',
           justifyContent: 'center',
-          background: '#06090f',
+          background: 'var(--bg-page)',
           color: 'var(--text-lo)',
           fontFamily: 'var(--mono)',
           fontSize: '0.75rem',
@@ -680,7 +677,7 @@ export default function DashboardPage({ uf }) {
           alignItems: 'center',
           justifyContent: 'center',
           gap: '8px',
-          background: '#06090f',
+          background: 'var(--bg-page)',
           color: 'var(--risk-alto)',
           fontFamily: 'var(--mono)',
           fontSize: '0.8rem',
@@ -724,12 +721,11 @@ export default function DashboardPage({ uf }) {
       <div style={{ borderTop: '1px solid var(--border-dim)', paddingTop: '12px' }}>
         <div
           style={{
-            fontSize: '0.58rem',
+            fontSize: '0.76rem',
             color: 'var(--text-lo)',
-            textTransform: 'uppercase',
-            letterSpacing: '0.1em',
-            fontFamily: 'var(--mono)',
-            marginBottom: '7px',
+            fontFamily: 'var(--sans)',
+            fontWeight: 600,
+            marginBottom: '10px',
           }}
         >
           Classificacao
@@ -746,13 +742,13 @@ export default function DashboardPage({ uf }) {
                 display: 'flex',
                 alignItems: 'center',
                 gap: '7px',
-                padding: '4px 6px',
-                borderRadius: '2px',
+                padding: '8px 10px',
+                borderRadius: '8px',
                 cursor: 'pointer',
-                marginBottom: '2px',
+                marginBottom: '4px',
                 background: ativo ? `${cor}14` : 'transparent',
                 border: `1px solid ${ativo ? `${cor}44` : 'transparent'}`,
-                opacity: ativo ? 1 : 0.35,
+                opacity: ativo ? 1 : 0.6,
                 transition: 'all 0.15s',
               }}
             >
@@ -767,9 +763,10 @@ export default function DashboardPage({ uf }) {
               />
               <span
                 style={{
-                  fontSize: '0.68rem',
+                  fontSize: '0.82rem',
                   color: ativo ? 'var(--text-hi)' : 'var(--text-lo)',
-                  fontFamily: 'var(--mono)',
+                  fontFamily: 'var(--sans)',
+                  fontWeight: ativo ? 600 : 500,
                 }}
               >
                 {LABEL_RISCO[classe]}
@@ -777,9 +774,10 @@ export default function DashboardPage({ uf }) {
               <span
                 style={{
                   marginLeft: 'auto',
-                  fontSize: '0.62rem',
+                  fontSize: '0.72rem',
                   color: 'var(--text-lo)',
                   fontFamily: 'var(--mono)',
+                  fontVariantNumeric: 'tabular-nums lining-nums',
                 }}
               >
                 {distribuicao[classe] || 0}
@@ -792,22 +790,22 @@ export default function DashboardPage({ uf }) {
       <div style={{ borderTop: '1px solid var(--border-dim)', paddingTop: '12px', marginTop: '10px' }}>
         <div
           style={{
-            fontSize: '0.58rem',
+            fontSize: '0.76rem',
             color: 'var(--text-lo)',
-            textTransform: 'uppercase',
-            letterSpacing: '0.1em',
-            fontFamily: 'var(--mono)',
-            marginBottom: '5px',
+            fontFamily: 'var(--sans)',
+            fontWeight: 600,
+            marginBottom: '8px',
           }}
         >
           Score
         </div>
         <div
           style={{
-            fontSize: '0.62rem',
+            fontSize: '0.82rem',
             color: 'var(--text-mid)',
-            marginBottom: '3px',
-            fontFamily: 'var(--mono)',
+            marginBottom: '6px',
+            fontFamily: 'var(--sans)',
+            fontWeight: 500,
           }}
         >
           {scoreRange[0]} - {scoreRange[1]}
@@ -833,12 +831,11 @@ export default function DashboardPage({ uf }) {
       <div style={{ borderTop: '1px solid var(--border-dim)', paddingTop: '12px', marginTop: '10px' }}>
         <div
           style={{
-            fontSize: '0.58rem',
+            fontSize: '0.76rem',
             color: 'var(--text-lo)',
-            textTransform: 'uppercase',
-            letterSpacing: '0.1em',
-            fontFamily: 'var(--mono)',
-            marginBottom: '5px',
+            fontFamily: 'var(--sans)',
+            fontWeight: 600,
+            marginBottom: '8px',
           }}
         >
           Municipio
@@ -851,12 +848,12 @@ export default function DashboardPage({ uf }) {
           style={{
             width: '100%',
             background: 'var(--bg-card)',
-            border: '1px solid var(--border-dim)',
-            borderRadius: '2px',
-            padding: '5px 7px',
+            border: '1px solid var(--border)',
+            borderRadius: '8px',
+            padding: '9px 12px',
             color: 'var(--text-hi)',
-            fontSize: '0.7rem',
-            fontFamily: 'var(--mono)',
+            fontSize: '0.9rem',
+            fontFamily: 'var(--sans)',
             outline: 'none',
             boxSizing: 'border-box',
           }}
@@ -874,7 +871,7 @@ export default function DashboardPage({ uf }) {
           style={{
             position: 'fixed',
             inset: 0,
-            background: 'rgba(0,0,0,0.6)',
+            background: 'rgba(17,24,39,0.22)',
             zIndex: 99,
           }}
         />
@@ -888,8 +885,8 @@ export default function DashboardPage({ uf }) {
             left: 0,
             bottom: 0,
             width: '240px',
-            background: '#080b11',
-            borderRight: '1px solid var(--border-dim)',
+            background: 'var(--bg-sidebar)',
+            borderRight: '1px solid var(--border)',
             display: 'flex',
             flexDirection: 'column',
             padding: '16px 14px',
@@ -907,8 +904,8 @@ export default function DashboardPage({ uf }) {
         style={{
           display: 'flex',
           minHeight: 'calc(100vh - 56px)',
-          background: '#06090f',
-          borderTop: '1px solid var(--border-dim)',
+          background: 'var(--bg-page)',
+          borderTop: '1px solid var(--border)',
         }}
       >
         {!isMobile ? (
@@ -916,8 +913,8 @@ export default function DashboardPage({ uf }) {
             style={{
               width: '195px',
               minWidth: '195px',
-              background: '#080b11',
-              borderRight: '1px solid var(--border-dim)',
+              background: 'var(--bg-sidebar)',
+              borderRight: '1px solid var(--border)',
               display: 'flex',
               flexDirection: 'column',
               padding: '16px 14px',
@@ -940,17 +937,17 @@ export default function DashboardPage({ uf }) {
             minWidth: 0,
           }}
         >
-          <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+          <div style={{ display: 'flex', alignItems: isMobile ? 'flex-start' : 'center', gap: '10px' }}>
             {isMobile ? (
               <button
                 onClick={() => setSidebarAberta(true)}
                 style={{
                   background: 'var(--bg-card)',
-                  border: '1px solid var(--border-dim)',
-                  borderRadius: '3px',
+                  border: '1px solid var(--border)',
+                  borderRadius: '10px',
                   color: 'var(--text-hi)',
                   cursor: 'pointer',
-                  padding: '6px 10px',
+                  padding: '8px 12px',
                   fontSize: '1rem',
                   flexShrink: 0,
                 }}
@@ -959,40 +956,48 @@ export default function DashboardPage({ uf }) {
               </button>
             ) : null}
 
-            <div style={{ borderLeft: '3px solid var(--accent)', paddingLeft: '11px', minWidth: 0 }}>
+            <div style={{ borderLeft: '3px solid var(--accent)', paddingLeft: isMobile ? '10px' : '11px', minWidth: 0 }}>
               <h1
                 style={{
-                  fontSize: isMobile ? '0.85rem' : '1rem',
+                  fontSize: isMobile ? '1.05rem' : '1.45rem',
                   fontWeight: 700,
                   color: 'var(--text-hi)',
-                  letterSpacing: '0.04em',
-                  textTransform: 'uppercase',
-                  fontFamily: 'var(--mono)',
+                  fontFamily: 'var(--sans)',
                   margin: 0,
+                  lineHeight: 1.2,
                 }}
               >
                 Capacidade de Pagamento - {getStateName(normalizedUf)}
               </h1>
               <p
                 style={{
-                  fontSize: '0.62rem',
+                  fontSize: isMobile ? '0.78rem' : '0.84rem',
                   color: 'var(--text-lo)',
-                  fontFamily: 'var(--mono)',
-                  marginTop: '2px',
+                  fontFamily: 'var(--sans)',
+                  marginTop: '4px',
                   marginBottom: 0,
+                  lineHeight: 1.45,
                 }}
               >
-                SCORE DE SOLVENCIA · {municipios.length} MUNICIPIOS · REFERENCIA 2020-2025
+                Score de solvencia · {municipios.length} municipios · Referencia 2020-2025
               </p>
             </div>
           </div>
 
-          <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
+          <div
+            style={{
+              display: 'grid',
+              gridTemplateColumns: isMobile ? 'repeat(2, minmax(0, 1fr))' : 'repeat(5, minmax(0, 1fr))',
+              gap: '8px',
+            }}
+          >
             <KPI label={`Score medio ${normalizedUf}`} value={mediaEstado ? mediaEstado.toFixed(1) : '-'} />
             <KPI label="Score mediano" value={medianaEstado ? medianaEstado.toFixed(1) : '-'} />
             <KPI label="Risco baixo" value={nBaixo} destaque="var(--risk-baixo)" />
             <KPI label="Alto + Critico" value={nAlto} destaque="var(--risk-alto)" />
-            <KPI label="Alertas ativos" value={nAlertas} destaque="#f59e0b" />
+            <div style={isMobile ? { gridColumn: '1 / -1' } : undefined}>
+              <KPI label="Alertas ativos" value={nAlertas} destaque="var(--risk-medio)" />
+            </div>
           </div>
 
           <div
@@ -1007,11 +1012,11 @@ export default function DashboardPage({ uf }) {
             <div
               style={{
                 flex: isMobile ? 'none' : '1 1 0',
-                height: isMobile ? '320px' : '100%',
+                height: isMobile ? '290px' : '100%',
                 minWidth: 0,
                 background: 'var(--bg-panel)',
-                border: '1px solid var(--border-dim)',
-                borderRadius: '3px',
+                border: '1px solid var(--border)',
+                borderRadius: '12px',
                 overflow: 'hidden',
                 position: 'relative',
                 zIndex: 0,
@@ -1049,8 +1054,8 @@ export default function DashboardPage({ uf }) {
                 width: isMobile ? '100%' : '270px',
                 minWidth: isMobile ? 'unset' : '270px',
                 display: 'flex',
-                flexDirection: isMobile ? 'row' : 'column',
-                flexWrap: isMobile ? 'wrap' : 'nowrap',
+                flexDirection: 'column',
+                flexWrap: 'nowrap',
                 gap: '8px',
                 overflowY: isMobile ? 'visible' : 'auto',
               }}
@@ -1070,35 +1075,34 @@ export default function DashboardPage({ uf }) {
                         display: 'flex',
                         alignItems: 'center',
                         gap: '7px',
-                        padding: '3px 0',
+                        padding: '8px 0',
                         borderBottom: '1px solid var(--border-dim)',
-                        fontFamily: 'var(--mono)',
-                        fontSize: '0.7rem',
+                        fontSize: '0.8rem',
                       }}
                     >
-                      <span style={{ color: cor, minWidth: '48px' }}>{LABEL_RISCO[classe]}</span>
+                      <span style={{ color: cor, minWidth: '52px', fontFamily: 'var(--sans)', fontWeight: 600 }}>{LABEL_RISCO[classe]}</span>
                       <div
                         style={{
                           flex: 1,
                           background: 'var(--bg-card)',
-                          borderRadius: '2px',
-                          height: '5px',
+                          borderRadius: '999px',
+                          height: '6px',
                         }}
                       >
                         <div
                           style={{
                             width: `${percentual}%`,
-                            height: '5px',
+                            height: '6px',
                             background: cor,
-                            borderRadius: '2px',
+                            borderRadius: '999px',
                             transition: 'width 0.4s',
                           }}
                         />
                       </div>
-                      <span style={{ color: 'var(--text-mid)', minWidth: '22px', textAlign: 'right' }}>
+                      <span style={{ color: 'var(--text-mid)', minWidth: '26px', textAlign: 'right', fontFamily: 'var(--mono)', fontVariantNumeric: 'tabular-nums lining-nums' }}>
                         {quantidade}
                       </span>
-                      <span style={{ color: 'var(--text-lo)', minWidth: '30px', textAlign: 'right' }}>
+                      <span style={{ color: 'var(--text-lo)', minWidth: '34px', textAlign: 'right', fontFamily: 'var(--mono)', fontVariantNumeric: 'tabular-nums lining-nums' }}>
                         {percentual.toFixed(0)}%
                       </span>
                     </div>
@@ -1106,7 +1110,7 @@ export default function DashboardPage({ uf }) {
                 })}
               </Painel>
 
-              <Painel style={{ flex: isMobile ? '1 1 calc(50% - 4px)' : 'none' }}>
+              <Painel style={{ flex: isMobile ? '1 1 100%' : 'none' }}>
                 <PainelTitulo>Indicadores - Mediana Estadual</PainelTitulo>
                 {Object.entries(medianas).map(([label, value]) => (
                   <div
@@ -1114,20 +1118,19 @@ export default function DashboardPage({ uf }) {
                     style={{
                       display: 'flex',
                       justifyContent: 'space-between',
-                      padding: '4px 0',
+                      padding: '8px 0',
                       borderBottom: '1px solid var(--border-dim)',
-                      fontFamily: 'var(--mono)',
-                      fontSize: '0.7rem',
+                      fontSize: '0.82rem',
                       gap: '10px',
                     }}
                   >
-                    <span style={{ color: 'var(--text-lo)' }}>{label}</span>
-                    <span style={{ color: 'var(--text-hi)', fontWeight: 600 }}>{value}</span>
+                    <span style={{ color: 'var(--text-lo)', fontFamily: 'var(--sans)' }}>{label}</span>
+                    <span style={{ color: 'var(--text-hi)', fontWeight: 600, fontFamily: 'var(--mono)', fontVariantNumeric: 'tabular-nums lining-nums' }}>{value}</span>
                   </div>
                 ))}
               </Painel>
 
-              <Painel style={{ flex: isMobile ? '1 1 calc(50% - 4px)' : 'none' }}>
+              <Painel style={{ flex: isMobile ? '1 1 100%' : 'none' }}>
                 <PainelTitulo>Alertas por Tipo</PainelTitulo>
                 {[
                   { label: 'Dispensa > 30%', value: alertas.dispensa, cor: '#ef4444' },
@@ -1142,25 +1145,26 @@ export default function DashboardPage({ uf }) {
                       display: 'flex',
                       justifyContent: 'space-between',
                       alignItems: 'center',
-                      padding: '4px 0',
+                      padding: '8px 0',
                       borderBottom: '1px solid var(--border-dim)',
                       gap: '10px',
                     }}
                   >
                     <span
                       style={{
-                        fontSize: '0.68rem',
+                        fontSize: '0.8rem',
                         color: 'var(--text-lo)',
-                        fontFamily: 'var(--mono)',
+                        fontFamily: 'var(--sans)',
                       }}
                     >
                       {item.label}
                     </span>
                     <span
                       style={{
-                        fontSize: '0.75rem',
+                        fontSize: '0.82rem',
                         fontWeight: 700,
                         fontFamily: 'var(--mono)',
+                        fontVariantNumeric: 'tabular-nums lining-nums',
                         color: item.value > 0 ? item.cor : 'var(--text-lo)',
                       }}
                     >
@@ -1178,20 +1182,20 @@ export default function DashboardPage({ uf }) {
             style={{
               flexShrink: 0,
               background: 'var(--bg-panel)',
-              border: '1px solid var(--border-dim)',
-              borderRadius: '3px',
+              border: '1px solid var(--border)',
+              borderRadius: '12px',
               overflow: 'auto',
             }}
           >
             <div
               style={{
                 padding: '7px 12px',
-                borderBottom: '1px solid var(--border-dim)',
-                fontSize: '0.6rem',
+                borderBottom: '1px solid var(--border)',
+                background: 'var(--bg-header)',
+                fontSize: '0.78rem',
                 color: 'var(--text-lo)',
-                textTransform: 'uppercase',
-                letterSpacing: '0.1em',
-                fontFamily: 'var(--mono)',
+                fontFamily: 'var(--sans)',
+                fontWeight: 600,
                 display: 'flex',
                 justifyContent: 'space-between',
                 alignItems: 'center',
@@ -1210,9 +1214,9 @@ export default function DashboardPage({ uf }) {
               ) : null}
             </div>
 
-            <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '0.73rem' }}>
+            <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '0.78rem', lineHeight: 1.45 }}>
               <thead>
-                <tr style={{ background: 'var(--bg-card)' }}>
+                <tr style={{ background: 'var(--bg-header)' }}>
                   {COLUNAS.map((coluna) => {
                     const ativo = sortField === coluna.field
                     const clicavel = coluna.field !== null
@@ -1224,15 +1228,13 @@ export default function DashboardPage({ uf }) {
                           if (clicavel) handleSort(coluna.field)
                         }}
                         style={{
-                          padding: '6px 9px',
+                          padding: '10px 10px',
                           textAlign: 'left',
                           color: ativo ? 'var(--text-hi)' : 'var(--text-lo)',
                           fontWeight: 600,
-                          fontSize: '0.6rem',
-                          letterSpacing: '0.06em',
-                          textTransform: 'uppercase',
-                          fontFamily: 'var(--mono)',
-                          borderBottom: `1px solid ${ativo ? 'var(--accent)' : 'var(--border-dim)'}`,
+                          fontSize: '0.74rem',
+                          fontFamily: 'var(--sans)',
+                          borderBottom: `1px solid ${ativo ? 'var(--accent)' : 'var(--border)'}`,
                           whiteSpace: 'nowrap',
                           cursor: clicavel ? 'pointer' : 'default',
                           userSelect: 'none',
@@ -1257,85 +1259,95 @@ export default function DashboardPage({ uf }) {
                         borderBottom: '1px solid var(--border-dim)',
                         cursor: 'pointer',
                         background:
-                          munSelecionado?.cod_ibge === municipio.cod_ibge ? 'rgba(59,91,219,0.12)' : 'transparent',
+                          munSelecionado?.cod_ibge === municipio.cod_ibge
+                            ? 'rgba(var(--accent-rgb), 0.12)'
+                            : index % 2 === 0
+                              ? 'var(--bg-card)'
+                              : 'var(--bg-card-alt)',
                         transition: 'background 0.1s',
                       }}
                     >
-                      <td style={{ padding: '5px 9px', color: 'var(--text-lo)', fontFamily: 'var(--mono)' }}>
+                      <td style={{ padding: '10px 10px', color: 'var(--text-lo)', fontFamily: 'var(--mono)', fontVariantNumeric: 'tabular-nums lining-nums' }}>
                         {index + 1}
                       </td>
-                      <td style={{ padding: '5px 9px', color: 'var(--text-hi)', fontWeight: 500, whiteSpace: 'nowrap' }}>
+                      <td style={{ padding: '10px 10px', color: 'var(--text-hi)', fontWeight: 600, whiteSpace: 'nowrap', fontFamily: 'var(--sans)' }}>
                         {municipio.ente}
                       </td>
                       <td
                         style={{
-                          padding: '5px 9px',
+                          padding: '10px 10px',
                           fontFamily: 'var(--mono)',
                           color: corPorScore(municipio.score),
                           fontWeight: 700,
+                          fontVariantNumeric: 'tabular-nums lining-nums',
                         }}
                       >
                         {municipio.score != null ? Number(municipio.score).toFixed(1) : '-'}
                       </td>
-                      <td style={{ padding: '5px 9px' }}>
+                      <td style={{ padding: '10px 10px' }}>
                         <BadgeRisco classe={municipio.classificacao} />
                       </td>
-                      <td style={{ padding: '5px 9px', color: 'var(--text-mid)', fontFamily: 'var(--mono)' }}>
+                      <td style={{ padding: '10px 10px', color: 'var(--text-mid)', fontFamily: 'var(--mono)', fontVariantNumeric: 'tabular-nums lining-nums' }}>
                         {municipio.populacao?.toLocaleString('pt-BR') || '-'}
                       </td>
-                      <td style={{ padding: '5px 9px', color: 'var(--text-mid)', fontFamily: 'var(--mono)' }}>
+                      <td style={{ padding: '10px 10px', color: 'var(--text-mid)', fontFamily: 'var(--mono)', fontVariantNumeric: 'tabular-nums lining-nums' }}>
                         {fmtPct(municipio.eorcam_raw)}
                       </td>
                       <td
                         style={{
-                          padding: '5px 9px',
+                          padding: '10px 10px',
                           fontFamily: 'var(--mono)',
                           color: Number(municipio.rproc_pct_atual) > 3 ? '#ef4444' : 'var(--text-mid)',
+                          fontVariantNumeric: 'tabular-nums lining-nums',
                         }}
                       >
                         {fmtPct(municipio.rproc_pct_atual)}
                       </td>
-                      <td style={{ padding: '5px 9px', color: 'var(--text-mid)', fontFamily: 'var(--mono)' }}>
+                      <td style={{ padding: '10px 10px', color: 'var(--text-mid)', fontFamily: 'var(--mono)', fontVariantNumeric: 'tabular-nums lining-nums' }}>
                         {municipio.qsiconfi != null ? fmtPct(Number(municipio.qsiconfi) * 100, 0) : '-'}
                       </td>
                       <td
                         style={{
-                          padding: '5px 9px',
+                          padding: '10px 10px',
                           fontFamily: 'var(--mono)',
                           color: Number(municipio.ccauc) > 0 ? '#ef4444' : 'var(--text-mid)',
+                          fontVariantNumeric: 'tabular-nums lining-nums',
                         }}
                       >
                         {fmtNum(municipio.ccauc, 2)}
                       </td>
                       <td
                         style={{
-                          padding: '5px 9px',
+                          padding: '10px 10px',
                           fontFamily: 'var(--mono)',
                           color: Number(municipio.lliq_raw) < 0 ? '#ef4444' : 'var(--text-mid)',
+                          fontVariantNumeric: 'tabular-nums lining-nums',
                         }}
                       >
                         {fmtNum(municipio.lliq_raw, 3)}
                       </td>
                       <td
                         style={{
-                          padding: '5px 9px',
+                          padding: '10px 10px',
                           fontFamily: 'var(--mono)',
                           color: Number(municipio.autonomia_media) < 0.08 ? '#f59e0b' : 'var(--text-mid)',
+                          fontVariantNumeric: 'tabular-nums lining-nums',
                         }}
                       >
                         {fmtNum(municipio.autonomia_media, 3)}
                       </td>
-                      <td style={{ padding: '5px 9px', color: 'var(--text-mid)', fontFamily: 'var(--mono)' }}>
+                      <td style={{ padding: '10px 10px', color: 'var(--text-mid)', fontFamily: 'var(--mono)', fontVariantNumeric: 'tabular-nums lining-nums' }}>
                         {municipio.n_licitacoes?.toLocaleString('pt-BR') || '-'}
                       </td>
-                      <td style={{ padding: '5px 9px', color: 'var(--text-mid)', fontFamily: 'var(--mono)' }}>
+                      <td style={{ padding: '10px 10px', color: 'var(--text-mid)', fontFamily: 'var(--mono)', fontVariantNumeric: 'tabular-nums lining-nums' }}>
                         {fmtBRL(municipio.valor_homologado_total)}
                       </td>
                       <td
                         style={{
-                          padding: '5px 9px',
+                          padding: '10px 10px',
                           fontFamily: 'var(--mono)',
                           color: Number(municipio.pct_dispensa) > 0.3 ? '#ef4444' : 'var(--text-mid)',
+                          fontVariantNumeric: 'tabular-nums lining-nums',
                         }}
                       >
                         {municipio.pct_dispensa != null ? fmtPct(Number(municipio.pct_dispensa) * 100) : '-'}
@@ -1356,13 +1368,12 @@ export default function DashboardPage({ uf }) {
                   gap: '6px',
                   padding: '9px',
                   cursor: 'pointer',
-                  borderTop: '1px solid var(--border-dim)',
+                  borderTop: '1px solid var(--border)',
                   color: 'var(--text-lo)',
-                  fontFamily: 'var(--mono)',
-                  fontSize: '0.62rem',
-                  letterSpacing: '0.08em',
-                  textTransform: 'uppercase',
-                  background: 'var(--bg-card)',
+                  fontFamily: 'var(--sans)',
+                  fontSize: '0.82rem',
+                  fontWeight: 500,
+                  background: 'var(--bg-header)',
                 }}
               >
                 {tabelaExpandida ? <span>▲ Colapsar - mostrar apenas top {PREVIEW_LINHAS}</span> : <span>▼ Ver todos os municipios</span>}
