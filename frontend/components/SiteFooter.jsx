@@ -4,25 +4,29 @@ import { buildFooterLabel, siteConfig } from '../config/site'
 export default function SiteFooter() {
   return (
     <footer className="site-footer">
-      <div className="site-footer-left">
-        <div className="site-footer-title">{buildFooterLabel()}</div>
-        <div className="site-footer-subtitle">Dados públicos, código aberto.</div>
-      </div>
+      <div className="site-footer-inner">
+        <div className="site-footer-top">
+          <div className="site-footer-brand">
+            <div className="site-footer-title">{siteConfig.brandName}</div>
+            <div className="site-footer-subtitle">Os dados são públicos. A forma que avaliamos, também.</div>
+          </div>
 
-      <div className="site-footer-right">
-        <div className="footer-links">
-          <a href={siteConfig.repoUrl}>GitHub</a>
-          <Link href={siteConfig.paths.methodology}>Docs</Link>
-          <Link href={`${siteConfig.paths.methodology}#metodologia`}>Metodologia</Link>
+          <div className="site-footer-nav">
+            <div className="footer-nav-col">
+              <Link href={siteConfig.paths.methodology}>Docs</Link>
+              <Link href={`${siteConfig.paths.methodology}#metodologia`}>Metodologia</Link>
+              <a href={siteConfig.repoUrl}>GitHub</a>
+            </div>
+            <div className="footer-nav-col">
+              <a href={`mailto:${siteConfig.contactEmail}`}>{siteConfig.contactEmail}</a>
+              <Link href={siteConfig.paths.privacy}>Privacidade</Link>
+              <Link href={siteConfig.paths.terms}>Termos</Link>
+            </div>
+          </div>
         </div>
 
-        <div className="footer-contact">
-          <a href={`mailto:${siteConfig.contactEmail}`}>{siteConfig.contactEmail}</a>
-        </div>
-
-        <div className="footer-links footer-links-muted">
-          <Link href={siteConfig.paths.privacy}>Privacidade</Link>
-          <Link href={siteConfig.paths.terms}>Termos</Link>
+        <div className="site-footer-bottom">
+          {buildFooterLabel()}
         </div>
       </div>
     </footer>

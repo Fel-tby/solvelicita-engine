@@ -31,6 +31,24 @@ export default function DocsPage() {
     >
       <section id="docs" className="section active">
         <div id="docs-wrap" className="docs-wrap">
+          <div className="docs-mobile-nav">
+            <select
+              className="docs-select"
+              value={docId}
+              onChange={(e) => setDocId(e.target.value)}
+            >
+              {DOC_GROUPS.map((group) => (
+                <optgroup key={group} label={group}>
+                  {DOC_LINKS.filter((item) => item.group === group).map((item) => (
+                    <option key={item.id} value={item.id}>
+                      {item.label}
+                    </option>
+                  ))}
+                </optgroup>
+              ))}
+            </select>
+          </div>
+
           <div className="docs-sidebar">
             {DOC_GROUPS.map((group) => (
               <div key={group} className="docs-nav-group">
