@@ -1,6 +1,8 @@
 import { useEffect, useState } from 'react'
 import Link from 'next/link'
+import SiteFooter from '../../components/SiteFooter'
 import SiteLayout from '../../components/SiteLayout'
+import { buildPageTitle } from '../../config/site'
 import { buildStateSummaries, fetchMunicipios } from '../../lib/municipios'
 import { ESTADOS } from '../../lib/prototypeData'
 
@@ -52,13 +54,13 @@ export default function DadosPage() {
 
   return (
     <SiteLayout
-      title="SolveLicita — Dados"
+      title={buildPageTitle('Dados')}
       description="Selecione um estado para abrir o dashboard interativo."
       activeNav="dados"
     >
       <section id="dados" className="section active">
         <div className="page-header">
-          <h1>Score de Solvência · Brasil</h1>
+          <h1>Panorama Nacional</h1>
           <p>
             Selecione um estado para abrir o dashboard interativo. Estados em
             cinza ainda não foram processados.
@@ -111,12 +113,7 @@ export default function DadosPage() {
             )
           })}
         </div>
-        <footer>
-          <div>Dados: SICONFI / CAUC / DCA · ref. 2020–2025</div>
-          <div className="footer-links">
-            <Link href="/docs">Metodologia</Link>
-          </div>
-        </footer>
+        <SiteFooter />
       </section>
     </SiteLayout>
   )

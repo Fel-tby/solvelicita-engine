@@ -1,15 +1,17 @@
+import SiteFooter from '../components/SiteFooter'
 import SiteLayout from '../components/SiteLayout'
+import { buildPageTitle } from '../config/site'
 
 export default function RelatoriosPage() {
   return (
     <SiteLayout
-      title="SolveLicita — Relatórios"
+      title={buildPageTitle('Relatórios')}
       description="Relatórios estaduais em preparação para publicação."
       activeNav="relatorios"
     >
       <section id="relatorios" className="section active">
         <div className="page-header">
-          <h1>Relatórios de Estado</h1>
+          <h1>Relatórios Estaduais</h1>
           <p>Os relatórios narrativos ainda estão em preparação para publicação.</p>
         </div>
 
@@ -29,9 +31,7 @@ export default function RelatoriosPage() {
           </div>
         </div>
 
-        <footer>
-          <div>Relatórios estaduais serão publicados nesta área assim que estiverem prontos.</div>
-        </footer>
+        <SiteFooter />
       </section>
     </SiteLayout>
   )

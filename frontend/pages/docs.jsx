@@ -1,5 +1,7 @@
 import { useState } from 'react'
+import SiteFooter from '../components/SiteFooter'
 import SiteLayout from '../components/SiteLayout'
+import { buildPageTitle, siteConfig } from '../config/site'
 
 const DOC_LINKS = [
   { id: 'visao', label: 'Visão geral', group: 'Metodologia' },
@@ -23,8 +25,8 @@ export default function DocsPage() {
 
   return (
     <SiteLayout
-      title="SolveLicita — Docs"
-      description="Metodologia, validação e referência do SolveLicita."
+      title={buildPageTitle('Docs')}
+      description={`Metodologia, validação e referência do ${siteConfig.brandName}.`}
       activeNav="docs"
     >
       <section id="docs" className="section active">
@@ -55,11 +57,11 @@ export default function DocsPage() {
           <div className="docs-content">
             <div id="doc-visao" className={`doc-page ${docId === 'visao' ? 'active' : ''}`}>
               <div className="doc-h1">Metodologia do Score de Solvência</div>
-              <div className="doc-meta">Versão 7.0 · Março/2026 · <a href="https://github.com/Fel-tby/solvelicita">METODOLOGIA.md no GitHub</a></div>
+              <div className="doc-meta">Versão 7.0 · Março/2026 · <a href={siteConfig.repoUrl}>METODOLOGIA.md no GitHub</a></div>
               <div className="doc-callout"><strong>Aviso:</strong> Score baseado exclusivamente em dados oficiais declarados pelo próprio município ao Tesouro Nacional (SICONFI/RREO/RGF e FINBRA/DCA) e ao Governo Federal (CAUC/STN). Qualquer questionamento sobre os dados deve ser direcionado às fontes originais.</div>
               <div className="doc-h2">Objetivo</div>
               <p className="doc-p">SolveLicita responde à pergunta: <strong>"Essa prefeitura tem capacidade fiscal de honrar seus contratos?"</strong></p>
-              <p className="doc-p">O score mede a capacidade estrutural de solvência de curto a médio prazo, com horizonte de 12 a 24 meses — compatível com o ciclo de contratos públicos de fornecimento, serviços continuados e obras.</p>
+              <p className="doc-p">O score mede a capacidade estrutural de solvência de curto a médio prazo, com horizonte de 12 a 24 meses, compatível com o ciclo de contratos públicos de fornecimento, serviços continuados e obras.</p>
               <p className="doc-p">Não é um modelo de previsão de inadimplência pontual. É um score de risco relativo, construído exclusivamente com dados públicos.</p>
               <div className="doc-h2">Fontes</div>
               <table className="doc-table">
@@ -97,7 +99,7 @@ export default function DocsPage() {
               <div className="doc-h1">Liquidez Líquida (Lliq)</div>
               <div className="doc-meta">Peso 35% · Fonte: RGF Anexo 05</div>
               <div className="doc-code">Lliq = (DCL_total_pós_RP − DCL_RPPS_pós_RP) / Receita_Realizada</div>
-              <p className="doc-p">Extraído do RGF Anexo 05 (Demonstrativo da Disponibilidade de Caixa) do período mais recente entregue pelo município. O componente RPPS é subtraído por ter caixa vinculado de uso restrito — incluí-lo distorceria a liquidez real.</p>
+              <p className="doc-p">Extraído do RGF Anexo 05 (Demonstrativo da Disponibilidade de Caixa) do período mais recente entregue pelo município. O componente RPPS é subtraído por ter caixa vinculado de uso restrito, incluí-lo distorceria a liquidez real.</p>
               <div className="doc-h2">Curva de pontuação</div>
               <table className="doc-table">
                 <thead><tr><th>Lliq</th><th>Pontuação</th><th>Interpretação</th></tr></thead>
@@ -106,24 +108,24 @@ export default function DocsPage() {
                   <tr><td>0,10 – 0,35</td><td>linear 0,60 → 1,00</td><td>Liquidez razoável</td></tr>
                   <tr><td>0,00 – 0,10</td><td>linear 0,35 → 0,60</td><td>Liquidez positiva, mas estreita</td></tr>
                   <tr><td>−0,50 – 0,00</td><td>linear 0,00 → 0,35</td><td>Passivo imediato maior que caixa</td></tr>
-                  <tr><td>&lt; −0,50</td><td>0,00 + flag</td><td>Anomalia — dado suspeito</td></tr>
+                  <tr><td>&lt; −0,50</td><td>0,00 + flag</td><td>Anomalia, dado suspeito</td></tr>
                 </tbody>
               </table>
               <div className="doc-h2">Por que DCL pós-RP e não Caixa Bruto</div>
-              <p className="doc-p">A versão anterior (v5.x) usava Saldo de Caixa (DCA) e Restos a Pagar (RREO Anexo 07) como variáveis independentes. Por construção contábil, esses dois indicadores são altamente correlacionados negativamente — o modelo penalizava duas vezes o mesmo fenômeno.</p>
+              <p className="doc-p">A versão anterior (v5.x) usava Saldo de Caixa (DCA) e Restos a Pagar (RREO Anexo 07) como variáveis independentes. Por construção contábil, esses dois indicadores são altamente correlacionados negativamente, o modelo penalizava duas vezes o mesmo fenômeno.</p>
               <p className="doc-p">A fusão em Lliq via RGF Anexo 05 elimina a multicolinearidade e eleva a frequência de atualização de anual (DCA) para bimestral/semestral (RGF).</p>
             </div>
 
             <div id="doc-outros" className={`doc-page ${docId === 'outros' ? 'active' : ''}`}>
               <div className="doc-h1">Demais indicadores</div>
               <div className="doc-h2">Execução Orçamentária (Eorcam) — 15%</div>
-              <p className="doc-p">Mede se o município arrecada o que planejou. Usa média ponderada por recência (2020–2025). A zona saudável é 90–105% — excesso por verba extraordinária também é penalizado.</p>
+              <p className="doc-p">Mede se o município arrecada o que planejou. Usa média ponderada por recência (2020–2025). A zona saudável é 90–105%, excesso por verba extraordinária também é penalizado.</p>
               <div className="doc-h2">Qualidade SICONFI (Qsiconfi) — 15%</div>
-              <p className="doc-p">Proporção de anos (2020–2025) em que o município entregou o RREO ao Tesouro. Dado ausente não é sinal neutro — equivale a rebaixamento automático.</p>
+              <p className="doc-p">Proporção de anos (2020–2025) em que o município entregou o RREO ao Tesouro. Dado ausente não é sinal neutro, equivale a rebaixamento automático.</p>
               <div className="doc-h2">RP Crônicos (RPproc) — 15%</div>
               <p className="doc-p">Contagem de anos em que rproc_pct &gt; 3%. Municípios com 5 ou mais anos crônicos têm classificação máxima travada em Risco Médio.</p>
               <div className="doc-h2">Autonomia Tributária — 10%</div>
-              <p className="doc-p">Receita própria (IPTU, ISS, ITBI, taxas) como proporção da receita corrente. Municípios com autonomia abaixo de 8% da RCL recebem flag autonomia_critica — dependência total do FPM, que oscila 20–30% entre meses.</p>
+              <p className="doc-p">Receita própria (IPTU, ISS, ITBI, taxas) como proporção da receita corrente. Municípios com autonomia abaixo de 8% da RCL recebem flag autonomia_critica, dependência total do FPM, que oscila 20–30% entre meses.</p>
               <div className="doc-h2">Bloqueio Federal (Ccauc) — 10%</div>
               <p className="doc-p">Único indicador verificado externamente pelo Governo Federal, não autodeclarado. Qualquer pendência grave zera a contribuição do componente.</p>
             </div>
@@ -163,7 +165,7 @@ export default function DocsPage() {
 
             <div id="doc-val" className={`doc-page ${docId === 'val' ? 'active' : ''}`}>
               <div className="doc-h1">Validação Retroativa</div>
-              <div className="doc-meta">Walk-forward · 2020–2025 · <a href="https://github.com/Fel-tby/solvelicita">VALIDACAO.md no GitHub</a></div>
+              <div className="doc-meta">Walk-forward · 2020–2025 · <a href={siteConfig.repoUrl}>VALIDACAO.md no GitHub</a></div>
               <p className="doc-p">O score é calculado com dados de T0 e o desfecho observado é rproc_pct em T1. Réplica da situação real de uso: previsão de comportamento futuro a partir de informação presente, sem acesso a dados do período avaliado.</p>
               <div className="metric-row">
                 <div className="metric-card"><div className="metric-n">881</div><div className="metric-l">pares walk-forward</div></div>
@@ -209,13 +211,13 @@ export default function DocsPage() {
                   <tr><td>Era Completa</td><td>0,750</td><td>0,642</td><td style={{ color: 'var(--red)' }}>−0,108</td></tr>
                 </tbody>
               </table>
-              <p className="doc-p">O AUC sem RPproc na era completa (0,642) ainda discrimina moderadamente — o sinal de lliq, eorcam e qsiconfi é real e independente.</p>
+              <p className="doc-p">O AUC sem RPproc na era completa (0,642) ainda discrimina moderadamente, o sinal de lliq, eorcam e qsiconfi é real e independente.</p>
             </div>
 
             <div id="doc-erros" className={`doc-page ${docId === 'erros' ? 'active' : ''}`}>
               <div className="doc-h1">Erros Extremos — Era Completa</div>
               <div className="doc-h2">Falsos positivos (classificados como Alto/Crítico, rproc T1 &lt; 1%)</div>
-              <p className="doc-p">Todos os casos têm score entre 55–60 — fronteira exata da classe Alto. Nenhum no núcleo da classificação. Concentração na fronteira é esperada estatisticamente.</p>
+              <p className="doc-p">Todos os casos têm score entre 55–60, fronteira exata da classe Alto. Nenhum no núcleo da classificação. Concentração na fronteira é esperada estatisticamente.</p>
               <div className="doc-h2">Falsos negativos (classificados como Baixo/Médio, rproc T1 &gt; 5%)</div>
               <p className="doc-p">Padrão dominante: liquidez positiva em T0 seguida de deterioração abrupta de RP em T1. Choque que nenhum modelo anual consegue antecipar sem dados infraanuais.</p>
               <div className="doc-callout">Mitigação recomendada: monitoramento trimestral de rproc_pct para municípios com score entre 70–90 e n_anos_cronicos ≥ 1.</div>
@@ -230,16 +232,16 @@ export default function DocsPage() {
                   <tr><td>DCL</td><td>Disponibilidade de Caixa Líquida após dedução de Restos a Pagar</td></tr>
                   <tr><td>RP Processados</td><td>Despesas já liquidadas mas não pagas ao fornecedor</td></tr>
                   <tr><td>RP Não Processados</td><td>Despesas empenhadas mas ainda não liquidadas</td></tr>
-                  <tr><td>RPPS</td><td>Regime Próprio de Previdência Social — caixa vinculado, excluído do Lliq</td></tr>
+                  <tr><td>RPPS</td><td>Regime Próprio de Previdência Social, caixa vinculado, excluído do Lliq</td></tr>
                   <tr><td>Eorcam</td><td>Execução Orçamentária. Receita realizada / receita prevista, em %</td></tr>
                   <tr><td>Ccauc</td><td>Score de pendência no CAUC. 0,0 = regular; 1,0 = pendência grave</td></tr>
                   <tr><td>rproc_pct</td><td>RP processados liquidados a pagar como % da Receita Realizada</td></tr>
                   <tr><td>n_anos_cronicos</td><td>Nº de anos em que rproc_pct &gt; 3%</td></tr>
-                  <tr><td>FPM</td><td>Fundo de Participação dos Municípios — principal transferência federal</td></tr>
+                  <tr><td>FPM</td><td>Fundo de Participação dos Municípios, principal transferência federal</td></tr>
                   <tr><td>RGF</td><td>Relatório de Gestão Fiscal</td></tr>
                   <tr><td>RREO</td><td>Relatório Resumido da Execução Orçamentária</td></tr>
                   <tr><td>CAUC</td><td>Cadastro Único de Convênios</td></tr>
-                  <tr><td>AUC-ROC</td><td>Área sob a curva ROC — mede poder discriminativo do modelo</td></tr>
+                  <tr><td>AUC-ROC</td><td>Área sob a curva ROC, mede poder discriminativo do modelo</td></tr>
                 </tbody>
               </table>
             </div>
@@ -258,12 +260,19 @@ export default function DocsPage() {
 
             <div id="doc-citar" className={`doc-page ${docId === 'citar' ? 'active' : ''}`}>
               <div className="doc-h1">Como citar</div>
-              <div className="doc-code">&gt; SolveLicita. Score de Solvência Municipal. 2026.<br />&gt; Disponível em: https://solvelicita.tech<br />&gt; Código e metodologia: https://github.com/Fel-tby/solvelicita</div>
+              <div className="doc-code">
+                {`> ${siteConfig.brandName}. Score de Solvência Municipal. ${siteConfig.foundedYear}.`}
+                <br />
+                {`> Disponível em: ${siteConfig.siteUrl}`}
+                <br />
+                {`> Código e metodologia: ${siteConfig.repoUrl}`}
+              </div>
               <div className="doc-h2">Licença</div>
-              <p className="doc-p">Código sob licença MIT. Dados são de fontes públicas federais.</p>
+              <p className="doc-p">{`Código sob licença ${siteConfig.license}. Dados são de fontes públicas federais.`}</p>
             </div>
           </div>
         </div>
+        <SiteFooter />
       </section>
     </SiteLayout>
   )

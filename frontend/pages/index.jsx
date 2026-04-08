@@ -1,11 +1,13 @@
 import Link from 'next/link'
 import AboutPage from '../components/AboutPage'
+import SiteFooter from '../components/SiteFooter'
 import SiteLayout from '../components/SiteLayout'
+import { buildPageTitle } from '../config/site'
 
 export default function HomePage() {
   return (
     <SiteLayout
-      title="SolveLicita — Solvência Municipal"
+      title={buildPageTitle('Solvência Municipal')}
       description="Score de solvência municipal com dados públicos, metodologia documentada e dashboard por estado."
       activeNav="sobre"
     >
@@ -132,14 +134,7 @@ export default function HomePage() {
           </div>
         </div>
 
-        <footer>
-          <div>SolveLicita · 2026 · Paraíba</div>
-          <div className="footer-links">
-            <a href="https://github.com/Fel-tby/solvelicita">GitHub</a>
-            <Link href="/docs">Metodologia</Link>
-            <Link href="/contato">Contato</Link>
-          </div>
-        </footer>
+        <SiteFooter />
       </section>
     </SiteLayout>
   )

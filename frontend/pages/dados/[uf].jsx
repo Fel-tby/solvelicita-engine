@@ -1,6 +1,7 @@
 import { useRouter } from 'next/router'
 import DashboardPage from '../../components/DashboardPage'
 import SiteLayout from '../../components/SiteLayout'
+import { buildPageTitle, siteConfig } from '../../config/site'
 
 export default function EstadoPage() {
   const router = useRouter()
@@ -8,8 +9,8 @@ export default function EstadoPage() {
 
   return (
     <SiteLayout
-      title={`SolveLicita — ${uf || 'Dados'}`}
-      description="Dashboard interativo do SolveLicita por estado."
+      title={buildPageTitle(uf || 'Dados')}
+      description={`Dashboard interativo do ${siteConfig.brandName} por estado.`}
       activeNav="dados"
     >
       <section id="dados" className="section active">
