@@ -114,6 +114,11 @@ data/outputs/
 data/outputs/**/*.csv
 data/outputs/outputs_backups
 
+# Analysis: artefatos locais de backtest/validacao
+data/analysis/
+data/analysis/**/*.csv
+data/analysis/**/*.txt
+
 # Exceções: artefatos públicos do projeto vão pro git
 !data/outputs/score_municipios_pb.csv
 !data/outputs/score_municipios_pb_pncp.csv

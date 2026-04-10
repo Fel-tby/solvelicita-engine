@@ -218,7 +218,7 @@ Contagem de anos (sobre todos os exercícios 2020–2025 com RREO entregue) em q
 
 ### Cap duro de classificação
 
-Municípios com `n_anos_cronicos ≥ 5` têm classificação máxima **travada em 🟡 Risco Médio**, independente do score numérico.
+Municípios com `n_anos_cronicos ≥ 4` têm classificação máxima **travada em 🟡 Risco Médio**, independente do score numérico.
 
 ---
 
@@ -234,7 +234,7 @@ Municípios com `n_anos_cronicos ≥ 5` têm classificação máxima **travada e
 
 **Caps duros independentes do score numérico:**
 - Transparência (`Qsiconfi`): ver seção acima
-- Cronicidade de RP (`RPproc`): `n_anos_cronicos ≥ 5` → teto 🟡 Risco Médio
+- Cronicidade de RP (`RPproc`): `n_anos_cronicos ≥ 4` → teto 🟡 Risco Médio
 
 ---
 

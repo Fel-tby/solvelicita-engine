@@ -19,7 +19,7 @@ logger = logging.getLogger(__name__)
 _ROOT = Path(__file__).resolve().parent.parent.parent
 
 _CSV_FALLBACK: dict[str, str] = {
-    "mart_indicadores_municipios" : "data/processed/PB/siconfi_indicadores_pb.csv",
+    "mart_indicadores_municipios" : "data/processed/PB/mart_indicadores_pb.csv",
     "mart_pncp_municipios"        : "data/outputs/PB/score_municipios_pb_pncp.csv",
     "score_municipios"            : "data/outputs/PB/score_municipios_pb.csv",
 }

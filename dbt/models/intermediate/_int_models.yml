@@ -29,6 +29,21 @@ models:
               arguments:
                 values: ['Q', 'S']
 
+  - name: int_siconfi_indicadores_anuais
+    description: >
+      Equivalente anual do legado siconfi_indicadores por municipio/ano.
+      Junta RREO e RGF em uma unica visao analitica e remove anos sem
+      nenhum dado real entregue para o municipio.
+    columns:
+      - name: uf
+        tests: [not_null]
+      - name: cod_ibge
+        tests: [not_null]
+      - name: ano
+        tests: [not_null]
+      - name: entregou_rreo
+        tests: [not_null]
+
   - name: int_rproc
     description: >
       Contagem de anos crônicos de RP Processados > 3% por município.

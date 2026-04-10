@@ -46,6 +46,16 @@ def _bq(client: bigquery.Client, table: str, uf: str) -> pd.DataFrame:
     return client.query(query).to_dataframe()
 
 
+def _bq_anuais(client: bigquery.Client, uf: str) -> pd.DataFrame:
+    query = f"""
+        SELECT *
+        FROM `{PROJECT}.{DATASET_I}.int_siconfi_indicadores_anuais`
+        WHERE uf = '{uf}'
+        ORDER BY instituicao, ano
+    """
+    return client.query(query).to_dataframe()
+
+
 def _bq_mart_pop(client: bigquery.Client) -> pd.DataFrame:
     """Busca populacao do mart para usar no decay."""
     return client.query(
@@ -260,11 +270,17 @@ def run(uf: str = "PB") -> None:
     merged = df_eorcam_m.merge(df_lliq_m, on="cod_ibge", how="outer")
     _merge_bq(client, merged, uf=uf)
 
-    # Exportação Local (Audit)
+    # Exportacao local equivalente ao legado anual do SICONFI.
     paths = get_paths(uf)
-    csv_path = paths["processed"] / f"siconfi_indicadores_{uf.lower()}.csv"
-    merged.to_csv(csv_path, index=False)
-    print(f"  💾 Exportado local: {csv_path.name}")
+    csv_anuais = paths["processed"] / f"siconfi_indicadores_{uf.lower()}.csv"
+    df_anuais = _bq_anuais(client, uf=uf)
+    df_anuais.to_csv(csv_anuais, index=False)
+    print(f"  💾 Exportado local: {csv_anuais.name}")
+
+    # Exportacao local do resumo atual por municipio usado no fluxo novo.
+    csv_resumo = paths["processed"] / f"siconfi_postprocessed_{uf.lower()}.csv"
+    merged.to_csv(csv_resumo, index=False)
+    print(f"  💾 Exportado local: {csv_resumo.name}")
 
     print("\n✅ siconfi_postprocessor concluído.")
 
