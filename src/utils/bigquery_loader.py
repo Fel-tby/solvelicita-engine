@@ -71,6 +71,23 @@ def _get_client():
     return _client
 
 
+def is_bigquery_enabled() -> bool:
+    cfg = _cfg()
+    return bool(cfg["enabled"] and _check_bq_available() and cfg["sa_path"])
+
+
+def get_bigquery_client():
+    if not is_bigquery_enabled():
+        raise RuntimeError(
+            "BigQuery nao esta habilitado ou configurado no ambiente atual."
+        )
+    return _get_client()
+
+
+def get_bigquery_project() -> str:
+    return _cfg()["project"]
+
+
 def _sanitize(df: pd.DataFrame, uf: str) -> pd.DataFrame:
     """
     Prepara o DataFrame para upload no BigQuery:

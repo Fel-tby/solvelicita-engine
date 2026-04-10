@@ -208,7 +208,16 @@ def _carregar_bq(uf: str) -> pd.DataFrame:
 
 # Orquestrador principal
 
-def run(uf: str = "PB", source: str = "csv") -> pd.DataFrame:
+def run(
+    uf: str = "PB",
+    source: str = "csv",
+    *,
+    publish_snapshot: bool = False,
+    run_type: str = "manual",
+    pipeline_mode: str | None = None,
+    pipeline_version: str | None = None,
+    snapshot_notes: str | None = None,
+) -> pd.DataFrame:
     pesos = cfg_module.get_pesos(uf)
 
     print("=" * 65)
@@ -294,6 +303,24 @@ def run(uf: str = "PB", source: str = "csv") -> pd.DataFrame:
     print(f"\n✅ Score calculado : {df_out['score'].notna().sum()} municípios")
     print(f"   Versão          : {VERSION}")
     print(f"   Salvo em        : {outfile}")
+
+    if publish_snapshot:
+        try:
+            from utils.snapshot_publisher import publish_snapshot as publish_snapshot_fn
+
+            publish_snapshot_fn(
+                df_out,
+                uf=uf,
+                methodology_version=VERSION,
+                run_type=run_type,
+                pipeline_mode=pipeline_mode,
+                source_mode=source,
+                pipeline_version=pipeline_version,
+                notes=snapshot_notes,
+            )
+        except Exception as exc:
+            print(f"  [SNAPSHOT] ⚠️ Falha ao publicar snapshot histórico: {exc}")
+
     print("=" * 65)
 
     return df_out

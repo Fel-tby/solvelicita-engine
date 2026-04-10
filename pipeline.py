@@ -35,11 +35,13 @@ from src.utils.supabase_sync import run as supabase_sync
 ETAPAS_VALIDAS = {"collect", "dbt", "process", "score", "sync"}
 ETAPAS_ORDEM = ["collect", "dbt", "process", "score", "sync"]
 ALL_UFS_TOKEN = "ALL"
+ALL_UFS_NORDESTE = ["AL", "BA", "CE", "MA", "PB", "PE", "PI", "RN", "SE"]
+PIPELINE_VERSION = "v9.1"
 
 
 def selecionar_uf() -> str:
     print()
-    print("  UF alvo (ex: PB, CE, RN, ALL). Enter = PB")
+    print("  UF alvo (ex: PB, CE, RN, ALL=Nordeste). Enter = PB")
     uf = input("  UF: ").strip().upper()
     return uf if uf else "PB"
 
@@ -165,13 +167,20 @@ def etapa_process(uf: str) -> None:
     dca_postprocessor.run(uf=uf)
 
 
-def etapa_score(uf: str) -> None:
+def etapa_score(uf: str, mode: str | None = None) -> None:
     print("\n" + "=" * 55)
     print(f"  ETAPA: SCORE - {uf}")
     print("=" * 55)
 
     print("\n[1/1] Solvency engine (source=bigquery)...")
-    solvency.run(uf=uf, source="bigquery")
+    solvency.run(
+        uf=uf,
+        source="bigquery",
+        publish_snapshot=True,
+        run_type="pipeline",
+        pipeline_mode=mode,
+        pipeline_version=f"pipeline.py {PIPELINE_VERSION}",
+    )
 
 
 def etapa_sync(uf: str) -> None:
@@ -210,6 +219,11 @@ def descobrir_ufs_presentes(*, for_sync_only: bool = False) -> list[str]:
     return ufs
 
 
+def filtrar_ufs_all(ufs: list[str]) -> list[str]:
+    """ALL executa apenas as UFs do Nordeste já presentes no workspace."""
+    return [uf for uf in ALL_UFS_NORDESTE if uf in set(ufs)]
+
+
 def validar_uf_all(mode: str, etapas: set[str]) -> list[str]:
     permitido_sem_collect = {"process", "score", "sync"}
     permitido_com_collect = {"collect", "dbt", "process", "score", "sync"}
@@ -234,8 +248,12 @@ def validar_uf_all(mode: str, etapas: set[str]) -> list[str]:
             sys.exit(1)
         ufs = descobrir_ufs_presentes(for_sync_only=(etapas == {"sync"}))
 
+    ufs = filtrar_ufs_all(ufs)
+
     if not ufs:
-        print("  Erro: nenhuma UF coletada foi encontrada no workspace para --uf ALL.")
+        print(
+            "  Erro: nenhuma UF do Nordeste foi encontrada no workspace para --uf ALL."
+        )
         sys.exit(1)
 
     return ufs
@@ -329,7 +347,7 @@ def main() -> None:
 
             if "score" in etapas:
                 for uf_item in ufs_all:
-                    etapa_score(uf_item)
+                    etapa_score(uf_item, mode=mode)
 
             if "sync" in etapas:
                 for uf_item in ufs_all:
@@ -345,7 +363,7 @@ def main() -> None:
                 etapa_process(uf)
 
             if "score" in etapas:
-                etapa_score(uf)
+                etapa_score(uf, mode=mode)
 
             if "sync" in etapas:
                 etapa_sync(uf)

@@ -83,7 +83,12 @@ __marimo__/
 
 
 
-# Docs gerados
+# Docs
+docs/**
+!docs/assets/
+!docs/assets/**
+!docs/METODOLOGIA.md
+!docs/VALIDACAO.md
 docs/_build/
 /site
 
