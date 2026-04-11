@@ -1,0 +1,58 @@
+import pandas as pd
+
+from src.utils.bigquery_loader import (
+    _build_merge_sql,
+    _dedupe_by_keys,
+    _normalize_key_columns,
+    _sanitize,
+)
+
+
+def test_normalize_key_columns_matches_sanitize_rules():
+    assert _normalize_key_columns(["cod_ibge", "data coleta", "1.1"]) == [
+        "cod_ibge",
+        "data_coleta",
+        "c_1_1",
+    ]
+
+
+def test_sanitize_adds_and_normalizes_uf():
+    df = pd.DataFrame(
+        [
+            {"cod_ibge": "2500106", "valor": 1},
+            {"cod_ibge": "2500205", "valor": 2},
+        ]
+    )
+    result = _sanitize(df, "pb")
+    assert "uf" in result.columns
+    assert set(result["uf"].tolist()) == {"PB"}
+
+
+def test_dedupe_by_keys_keeps_last():
+    df = pd.DataFrame(
+        [
+            {"uf": "PB", "cod_ibge": "2500106", "ano": "2024", "valor": "1"},
+            {"uf": "PB", "cod_ibge": "2500106", "ano": "2024", "valor": "2"},
+            {"uf": "PB", "cod_ibge": "2500205", "ano": "2024", "valor": "3"},
+        ]
+    )
+    result = _dedupe_by_keys(df, ["uf", "cod_ibge", "ano"], "dca", "PB")
+    assert len(result) == 2
+    valor = result.loc[result["cod_ibge"] == "2500106", "valor"].iloc[0]
+    assert valor == "2"
+
+
+def test_build_merge_sql_contains_keys_and_insert():
+    sql = _build_merge_sql(
+        target_ref="proj.raw.dca",
+        temp_ref="proj.raw.__tmp_dca",
+        cols=["uf", "cod_ibge", "ano", "valor"],
+        key_cols=["uf", "cod_ibge", "ano"],
+    )
+    assert "MERGE `proj.raw.dca` T" in sql
+    assert "USING `proj.raw.__tmp_dca` S" in sql
+    assert "T.`uf` = S.`uf`" in sql
+    assert "T.`cod_ibge` = S.`cod_ibge`" in sql
+    assert "T.`ano` = S.`ano`" in sql
+    assert "WHEN NOT MATCHED THEN" in sql
+    assert "INSERT (`uf`, `cod_ibge`, `ano`, `valor`)" in sql

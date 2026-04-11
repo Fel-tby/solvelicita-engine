@@ -1,7 +1,8 @@
 """
 Coletor CAUC — CKAN Tesouro Transparente.
 Responsabilidade: baixar o relatório nacional, filtrar para municípios da
-UF informada e salvar os dados BRUTOS (sem classificação de pendências).
+UF informada e publicar os dados brutos no BigQuery (sem classificacao de
+pendencias).
 
 A classificação de pendências por gravidade é feita por:
     src/processors/cauc_processor.py
@@ -13,17 +14,18 @@ Rodar individualmente:
 
 import sys
 import io
+from datetime import date
+from pathlib import Path
+
 import pandas as pd
 import requests
 import urllib3
-from pathlib import Path
-from datetime import date
 
 urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 from utils.paths import get_paths
-from utils.bigquery_loader import upload_raw
+from utils.bigquery_loader import publish_raw_merge
 
 URL_CAUC_BULK = (
     "https://www.tesourotransparente.gov.br/ckan/dataset/"
@@ -79,26 +81,20 @@ CAUC_COL_MAP = {
 
 def run(uf: str = "PB") -> pd.DataFrame:
     """
-    Baixa o CSV nacional do CAUC, filtra municípios da UF e salva raw.
-
-    Outputs:
-        raw/cauc/<UF>/cauc_raw_<uf>_<HOJE>.csv  — snapshot datado
-        raw/cauc/<UF>/cauc_raw_<uf>.csv          — latest (sobrescrito a cada coleta)
-        raw/cauc/cauc_raw_<uf>.csv               — legacy flat (compat processors)
+    Baixa o CSV nacional do CAUC, filtra municípios da UF e publica no BQ.
 
     Retorna o DataFrame bruto filtrado (com colunas originais do CKAN).
     """
     uf    = uf.upper()
     hoje  = date.today().strftime("%Y-%m-%d")
     paths = get_paths(uf)
-    raw_cauc_uf = paths["raw_cauc"]
 
     print("=" * 70)
     print(f"  Coletor CAUC — CKAN Tesouro Transparente")
     print(f"  UF: {uf} | Execução: {hoje}")
     print("=" * 70)
 
-    tabela_mun = raw_cauc_uf.parent.parent.parent / "processed" / uf / f"municipios_{uf.lower()}_tabela.csv"
+    tabela_mun = paths["processed"] / f"municipios_{uf.lower()}_tabela.csv"
     if not tabela_mun.exists():
         raise FileNotFoundError(
             f"Tabela de municípios não encontrada: {tabela_mun}\n"
@@ -138,20 +134,16 @@ def run(uf: str = "PB") -> pd.DataFrame:
 
     print(f"  Municípios {uf} encontrados: {len(df_uf)}")
 
-    # Primário — nova estrutura UF subfolder
-    # CSV salvo com colunas originais do CKAN ("1.1", "1.2" etc.)
-    df_uf.to_csv(raw_cauc_uf / f"cauc_raw_{uf.lower()}_{hoje}.csv",
-                 index=False, encoding="utf-8-sig")
-    df_uf.to_csv(raw_cauc_uf / f"cauc_raw_{uf.lower()}.csv",
-                 index=False, encoding="utf-8-sig")
-    print(f"  Salvo em: raw/cauc/{uf}/cauc_raw_{uf.lower()}.csv")
-
     print("=" * 70)
 
-    # Upload ao BigQuery com nomes semânticos.
-    # df_bq é uma cópia local — não altera df_uf nem os CSVs em disco.
+    # Publicacao segura no BigQuery com nomes semanticos.
     df_bq = df_uf.rename(columns=CAUC_COL_MAP)
-    upload_raw(df_bq, "cauc", uf)
+    publish_raw_merge(
+        df_bq,
+        table="cauc",
+        uf=uf,
+        key_cols=["uf", "cod_ibge", "data_coleta", "data_pesquisa"],
+    )
 
     return df_uf   # retorna com colunas originais do CKAN
 

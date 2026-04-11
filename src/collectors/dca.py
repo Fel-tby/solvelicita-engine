@@ -1,7 +1,7 @@
 """
-Coletor DCA (Declaração de Contas Anuais) — SolveLicita
+Coletor DCA (Declaracao de Contas Anuais) - SolveLicita
 Responsabilidade: buscar Balanço Patrimonial (Anexo I-AB) e Balanço de
-Receitas (Anexo I-C) para os municípios da UF e salvar dados BRUTOS.
+Receitas (Anexo I-C) para os municipios da UF e publicar dados brutos no BQ.
 
 O cálculo de Scaixa e Autonomia é feito por:
     src/processors/dca_processor.py
@@ -25,7 +25,7 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 from utils.paths import get_paths
-from utils.bigquery_loader import upload_raw
+from utils.bigquery_loader import publish_raw_merge
 
 logging.basicConfig(
     level=logging.INFO,
@@ -177,28 +177,13 @@ def coletar_dca(
     return pd.DataFrame(registros)
 
 
-def _salvar_com_merge(df_novo: pd.DataFrame, caminho: Path) -> pd.DataFrame:
-    """
-    Salva df_novo. Se o arquivo já existir (modo incremental),
-    concatena e desuplica por (cod_ibge, ano) — mantendo o mais recente.
-    """
-    if caminho.exists():
-        df_existente = pd.read_csv(caminho, dtype={"cod_ibge": str})
-        df_final     = pd.concat([df_existente, df_novo], ignore_index=True)
-        df_final     = df_final.drop_duplicates(subset=["cod_ibge", "ano"], keep="last")
-    else:
-        df_final = df_novo
-    df_final.to_csv(caminho, index=False)
-    return df_final
-
-
 def run(
     mode:       str                  = "full",
     uf:         str                  = "PB",
     municipios: pd.DataFrame | None  = None,
 ) -> pd.DataFrame:
     """
-    Executa a coleta DCA e salva raw.
+    Executa a coleta DCA e publica o bruto diretamente no BigQuery.
 
     Parâmetros
     ----------
@@ -207,7 +192,7 @@ def run(
     uf         : sigla do estado (default "PB")
     municipios : DataFrame de municípios. Se None, lê do CSV processado da UF.
 
-    Retorna o DataFrame bruto final (histórico completo após merge).
+    Retorna o DataFrame bruto coletado na execucao.
     """
     uf    = uf.upper()
     paths = get_paths(uf)
@@ -234,17 +219,18 @@ def run(
 
     df_novo = coletar_dca(municipios, anos)
 
-    # Primário — nova estrutura UF subfolder
-    caminho_novo = paths["raw_dca"] / f"dca_raw_{uf.lower()}.csv"
-    df_final     = _salvar_com_merge(df_novo, caminho_novo)
-
     log.info(
-        f"  ✅ Raw salvo: {caminho_novo} "
-        f"({len(df_final)} linhas, {df_final['ano'].nunique()} anos)"
+        f"  ✅ Coleta concluida: {len(df_novo)} linhas "
+        f"({df_novo['ano'].nunique()} anos)"
     )
 
-    upload_raw(df_final, "dca", uf)
-    return df_final
+    publish_raw_merge(
+        df_novo,
+        table="dca",
+        uf=uf,
+        key_cols=["uf", "cod_ibge", "ano"],
+    )
+    return df_novo
 
 
 if __name__ == "__main__":

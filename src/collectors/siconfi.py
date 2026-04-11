@@ -3,12 +3,7 @@ Crawler assíncrono para extração de relatórios contábeis do SICONFI.
 Gerencia requisições concorrentes aos endpoints RREO e RGF, implementando
 semáforos de controle de tráfego e resiliência contra rate limits (429).
 
-Outputs (brutos):
-    raw/siconfi/<UF>/siconfi_rreo_<uf>.csv
-    raw/siconfi/<UF>/siconfi_rgf_<uf>.csv
-
-O processamento analítico dos arquivos brutos é feito por:
-    src/processors/siconfi_processor.py
+Os dados brutos sao publicados diretamente nas tabelas raw do BigQuery.
 
 Rodar individualmente:
     python src/collectors/siconfi.py                    # full PB (2020–hoje)
@@ -31,7 +26,7 @@ logging.getLogger("httpcore").setLevel(logging.WARNING)
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 from utils.paths import get_paths
-from utils.bigquery_loader import upload_raw
+from utils.bigquery_loader import publish_raw_merge
 
 BASE_URL_SICONFI = "https://apidatalake.tesouro.gov.br/ords/siconfi/tt"
 MAX_CONCORRENCIA = 10
@@ -42,8 +37,14 @@ ANOS_INCREMENTAL = [date.today().year - 1, date.today().year]
 ANEXOS_RREO = ["RREO-Anexo 01", "RREO-Anexo 07"]
 ANEXOS_RGF  = ["RGF-Anexo 05"]
 
-CHAVE_RREO = ["cod_ibge", "exercicio", "periodo", "anexo", "cod_conta", "coluna"]
-CHAVE_RGF  = ["cod_ibge", "exercicio", "periodo", "anexo", "periodicidade", "cod_conta", "coluna"]
+CHAVE_RREO = [
+    "uf", "cod_ibge", "exercicio", "periodo", "anexo",
+    "cod_conta", "coluna", "conta", "esfera",
+]
+CHAVE_RGF  = [
+    "uf", "cod_ibge", "exercicio", "periodo", "periodicidade", "anexo",
+    "cod_conta", "coluna", "conta", "esfera",
+]
 
 
 class Progresso:
@@ -189,51 +190,6 @@ async def extrair_assincrono(
     return todos_registros
 
 
-def _carregar_base(caminho_novo: Path, caminho_legado: Path) -> pd.DataFrame | None:
-    """
-    Carrega DataFrame base para merge incremental.
-    Prioridade: caminho_novo > caminho_legado > None (primeira coleta).
-    """
-    if caminho_novo.exists():
-        return pd.read_csv(caminho_novo, dtype=str)
-    if caminho_legado and caminho_legado.exists():
-        print(f"\n  ⚠️  Base legada encontrada: {caminho_legado.name} — usando como histórico.")
-        return pd.read_csv(caminho_legado, dtype=str)
-    return None
-
-
-def _salvar_com_merge(
-    df_novo:         pd.DataFrame,
-    caminho:         Path,
-    chave:           list[str],
-    caminho_legado:  Path | None = None,
-) -> None:
-    """
-    Salva df_novo. Se existir base histórica, concatena e desuplica pela chave
-    natural (mantendo o registro mais recente).
-
-    caminho         : path primário (UF subfolder — nova estrutura)
-    caminho_legado  : path da estrutura anterior, lido como base se o primário não existe
-    """
-    df_existente = _carregar_base(caminho, caminho_legado)
-
-    if df_existente is not None:
-        df_final    = pd.concat([df_existente, df_novo.astype(str)], ignore_index=True)
-        chave_valid = [c for c in chave if c in df_final.columns]
-        if chave_valid:
-            antes    = len(df_final)
-            df_final = df_final.drop_duplicates(subset=chave_valid, keep="last")
-            duplic   = antes - len(df_final)
-            if duplic:
-                print(f"\n  🔁 {duplic:,} duplicatas removidas ({caminho.name})")
-    else:
-        df_final = df_novo
-
-    df_final.to_csv(caminho, index=False, encoding="utf-8")
-    anos = sorted(df_final["exercicio"].unique()) if "exercicio" in df_final.columns else []
-    print(f"  💾 {caminho.name}: {len(df_final):,} linhas | anos: {anos}")
-
-
 async def orquestrar_coleta(anos: list[int], uf: str) -> None:
     uf_upper     = uf.upper()
     uf_lower     = uf.lower()
@@ -244,9 +200,6 @@ async def orquestrar_coleta(anos: list[int], uf: str) -> None:
     inicio        = time.time()
     municipios_uf = obter_municipios(uf_upper)
     limits        = httpx.Limits(max_keepalive_connections=10, max_connections=15)
-
-    paths         = get_paths(uf_upper)
-    raw_siconfi   = paths["raw_siconfi"]
 
     tarefas_rreo_params = []
     tarefas_rgf_params  = []
@@ -302,36 +255,27 @@ async def orquestrar_coleta(anos: list[int], uf: str) -> None:
     registros_rreo = [item for sub in resultados_rreo if sub for item in sub]
     registros_rgf  = [item for sub in resultados_rgf  if sub for item in sub]
 
-    # Path primário (nova estrutura UF subfolder)
-    path_rreo_novo = raw_siconfi / f"siconfi_rreo_{uf_lower}.csv"
-    path_rgf_novo  = raw_siconfi / f"siconfi_rgf_{uf_lower}.csv"
-
-    # Path da estrutura anterior a raw/siconfi/ (processed/) — fallback de leitura
-    # Mantendo RAW local reference to avoid importing it globally or breaking previous paths
-    # Just defining raw folder as parent of raw_siconfi
-    RAW_BASE = paths["raw_siconfi"].parent.parent
-    legacy_rreo = RAW_BASE.parent / "processed" / f"siconfi_rreo_{uf_lower}.csv"
-    legacy_rgf  = RAW_BASE.parent / "processed" / f"siconfi_rgf_{uf_lower}.csv"
-
     if registros_rreo:
         df_rreo = pd.DataFrame(registros_rreo)
-        _salvar_com_merge(
-            df_rreo, path_rreo_novo, CHAVE_RREO,
-            caminho_legado=legacy_rreo,
+        publish_raw_merge(
+            df_rreo,
+            table="siconfi_rreo",
+            uf=uf_upper,
+            key_cols=CHAVE_RREO,
         )
-        upload_raw(df_rreo, "siconfi_rreo", uf_upper)
     else:
-        print("  ⚠️  RREO: nenhum dado retornado.")
+        print("  [WARN] RREO: nenhum dado retornado.")
 
     if registros_rgf:
         df_rgf = pd.DataFrame(registros_rgf)
-        _salvar_com_merge(
-            df_rgf, path_rgf_novo, CHAVE_RGF,
-            caminho_legado=legacy_rgf,
+        publish_raw_merge(
+            df_rgf,
+            table="siconfi_rgf",
+            uf=uf_upper,
+            key_cols=CHAVE_RGF,
         )
-        upload_raw(df_rgf, "siconfi_rgf", uf_upper)
     else:
-        print("  ⚠️  RGF: nenhum dado retornado.")
+        print("  [WARN] RGF: nenhum dado retornado.")
 
     print(f"\n  ⏱  Total: {(time.time() - inicio) / 60:.1f} minutos.")
 
