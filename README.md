@@ -1,22 +1,22 @@
 # SolveLicita
 
-**[solvelicita.tech](https://solvelicita.tech)**
-
-</div>
-
 ---
 
-[![Python](https://img.shields.io/badge/Python-3.11+-3776AB?logo=python&logoColor=white)](https://www.python.org/)
-[![dbt](https://img.shields.io/badge/dbt-FF694B?logo=dbt&logoColor=white)](https://www.getdbt.com/)
-[![Google BigQuery](https://img.shields.io/badge/BigQuery-669DF6?logo=googlebigquery&logoColor=white)](https://cloud.google.com/bigquery)
-[![Next.js](https://img.shields.io/badge/Next.js-000000?logo=nextdotjs&logoColor=white)](https://nextjs.org/)
-[![Supabase](https://img.shields.io/badge/Supabase-3ECF8E?logo=supabase&logoColor=white)](https://supabase.com/)
-<br>
-[![pytest](https://img.shields.io/badge/testes-pytest-0A9EDC?logo=pytest&logoColor=white)](tests/)
-[![Dados Públicos](https://img.shields.io/badge/dados-100%25%20públicos-2ea44f)](docs/METODOLOGIA.md)
-[![License: AGPL-3.0](https://img.shields.io/badge/Licen%C3%A7a-AGPL--3.0-blue.svg)](LICENSE)
+<p align="center">
+  <img src="docs/assets/icons/solvelicita_github_header.svg" alt="SolveLicita — Score de Solvência Municipal" width="100%">
+</p>
 
-![Mapa de risco de solvência — Paraíba](docs/assets/mapa1.png)
+<p align="center">
+  <a href="https://www.python.org/"><img src="https://img.shields.io/badge/Python-3.11+-3776AB?logo=python&logoColor=white" alt="Python"></a>
+  <a href="https://www.getdbt.com/"><img src="https://img.shields.io/badge/dbt-FF694B?logo=dbt&logoColor=white" alt="dbt"></a>
+  <a href="https://cloud.google.com/bigquery"><img src="https://img.shields.io/badge/BigQuery-669DF6?logo=googlebigquery&logoColor=white" alt="BigQuery"></a>
+  <a href="https://nextjs.org/"><img src="https://img.shields.io/badge/Next.js-000000?logo=nextdotjs&logoColor=white" alt="Next.js"></a>
+  <a href="https://supabase.com/"><img src="https://img.shields.io/badge/Supabase-3ECF8E?logo=supabase&logoColor=white" alt="Supabase"></a>
+  <br>
+  <a href="tests/"><img src="https://img.shields.io/badge/testes-pytest-0A9EDC?logo=pytest&logoColor=white" alt="pytest"></a>
+  <a href="docs/METODOLOGIA.md"><img src="https://img.shields.io/badge/dados-100%25%20públicos-2ea44f" alt="Dados Públicos"></a>
+  <a href="LICENSE"><img src="https://img.shields.io/badge/Licen%C3%A7a-AGPL--3.0-blue.svg" alt="Licença AGPL-3.0"></a>
+</p>
 
 ---
 
@@ -57,72 +57,86 @@ Além do score numérico, dois caps de classificação operam de forma independe
 
 ---
 
-## Arquitetura de Dados (Modern Data Stack)
+## Arquitetura do Pipeline
 
-O projeto opera sob o padrão de **Modern Data Stack (MDS)** com processamento híbrido no Google Cloud. O modelo foca em extração massiva e delega a transformação analítica para o banco de dados (BigQuery), enquanto os cálculos matemáticos complexos de avaliação de risco ficam no backend Python.
+O SolveLicita opera hoje com um fluxo **BigQuery-first**. Os dados públicos são coletados das APIs oficiais, publicados na camada `raw`, estruturados com `dbt`, enriquecidos por pós-processadores Python e consolidados pela engine de score. Ao final, o resultado é exportado localmente, sincronizado com o Supabase e também pode ser publicado na camada temporal do BigQuery para histórico e análises futuras.
 
 ```mermaid
 flowchart LR
     PL(["pipeline.py"])
 
-    subgraph INGEST ["1. Ingestão (Extract/Load)"]
-        direction TB
-        A1["API IBGE"]
-        A2["API SICONFI"]
-        A3["API PNCP"]
-        A4["API CAUC"]
-        RAW[("BigQuery: raw")]
-        A1 & A2 & A3 & A4 -->|Upload Raw| RAW
+    subgraph INGEST ["1. Ingestão"]
+        direction LR
+        APIS["APIs públicas<br/>IBGE / SICONFI / DCA / CAUC / PNCP"]
+        RAW[("BigQuery raw")]
+        APIS --> RAW
     end
 
     subgraph TRANSFORM ["2. Transformação (dbt)"]
         direction TB
-        STG["staging (Desduplicação)"]
-        INT["intermediate (Lógica)"]
-        MART["mart (Visões de Negócio)"]
-        STG --> INT --> MART
+        DBT["dbt"]
+        STG["staging"]
+        INT["intermediate"]
+        MART["mart"]
+        DBT --> STG --> INT --> MART
     end
 
     subgraph ENRICH ["3. Pós-Processamento (Python)"]
         direction TB
-        PROC["Processadores Matemáticos"]
-        BQ_INT[("BQ: intermediate")]
-        PROC -->|MERGE SQL| BQ_INT
+        PROC["Postprocessors Python"]
+        BQINT[("BQ intermediate")]
+        PROC -->|MERGE SQL| BQINT
     end
 
     subgraph SCORE ["4. Scoring Engine"]
-        direction TB
-        ENG["Engine Metodologia v7.0"]
-        CSV["score_municipios_uf.csv"]
-        ENG --> CSV
+        direction LR
+        ENG["Engine de score v7.1.0"]
+        CSV["CSV final"]
     end
 
     subgraph PRESENT ["5. Apresentação"]
-        direction TB
-        SYNC["Supabase Sync"]
-        WEB["Next.js / Dashboard"]
-        SYNC --> WEB
+        direction LR
+        SNAP[("BigQuery snapshots / ml / analytics")]
+        SB[("Supabase")]
+        WEB["Frontend Next.js"]
     end
 
     PL --> INGEST
-    INGEST --> TRANSFORM
-    TRANSFORM --> ENRICH
-    ENRICH --> SCORE
-    SCORE --> PRESENT
+    RAW --> TRANSFORM
+    MART --> ENRICH
+    MART --> ENG
+    BQINT --> ENG
+    ENG --> SNAP
+    ENG --> CSV
+    CSV --> SB
+    SB --> WEB
 
-    style PL fill:#313244,color:#cdd6f4,stroke:#89b4fa,stroke-width:2px
-    style INGEST fill:#1e1e2e,color:#cdd6f4,stroke:#a6e3a1,stroke-width:2px
-    style TRANSFORM fill:#1e1e2e,color:#cdd6f4,stroke:#f9e2af,stroke-width:2px
-    style ENRICH fill:#1e1e2e,color:#cdd6f4,stroke:#89dceb,stroke-width:2px
-    style SCORE fill:#1e1e2e,color:#cdd6f4,stroke:#fab387,stroke-width:2px
-    style PRESENT fill:#1e1e2e,color:#cdd6f4,stroke:#cba6f7,stroke-width:2px
+    style PL fill:#0f2744,color:#e8f3ff,stroke:#7fc4ff,stroke-width:2px
+    style INGEST fill:#12263d,color:#e8f3ff,stroke:#185FA5,stroke-width:2px
+    style TRANSFORM fill:#12263d,color:#e8f3ff,stroke:#2B7BBB,stroke-width:2px
+    style ENRICH fill:#12263d,color:#e8f3ff,stroke:#4A97D9,stroke-width:2px
+    style SCORE fill:#12263d,color:#e8f3ff,stroke:#6FB4F0,stroke-width:2px
+    style PRESENT fill:#12263d,color:#e8f3ff,stroke:#91CBFF,stroke-width:2px
+
+    style APIS fill:#1a1f26,color:#f2f7ff,stroke:#8aa7c4,stroke-width:1px
+    style RAW fill:#1a1f26,color:#f2f7ff,stroke:#8aa7c4,stroke-width:1px
+    style DBT fill:#1a1f26,color:#f2f7ff,stroke:#8aa7c4,stroke-width:1px
+    style STG fill:#1a1f26,color:#f2f7ff,stroke:#8aa7c4,stroke-width:1px
+    style INT fill:#1a1f26,color:#f2f7ff,stroke:#8aa7c4,stroke-width:1px
+    style MART fill:#1a1f26,color:#f2f7ff,stroke:#8aa7c4,stroke-width:1px
+    style PROC fill:#1a1f26,color:#f2f7ff,stroke:#8aa7c4,stroke-width:1px
+    style BQINT fill:#1a1f26,color:#f2f7ff,stroke:#8aa7c4,stroke-width:1px
+    style ENG fill:#1a1f26,color:#f2f7ff,stroke:#8aa7c4,stroke-width:1px
+    style CSV fill:#1a1f26,color:#f2f7ff,stroke:#8aa7c4,stroke-width:1px
+    style SNAP fill:#1a1f26,color:#f2f7ff,stroke:#8aa7c4,stroke-width:1px
+    style SB fill:#1a1f26,color:#f2f7ff,stroke:#8aa7c4,stroke-width:1px
+    style WEB fill:#1a1f26,color:#f2f7ff,stroke:#8aa7c4,stroke-width:1px
 ```
 
 ### Decisões de Design do Pipeline
-- **Espinha Dorsal Absoluta (Master Spine):** Municípios inadimplentes em transparência (sem dados) são intencionalmente avaliados como "Sem Dados" e **não** descartados da base. A referência geográfica principal é o IBGE, garantindo que o score seja aplicado consistentemente a todos os entes.
-- **Soberania do Dado Declarado:** O modelo analítico baseia-se unicamente nas declarações oficiais dos municípios ao Tesouro Nacional. Não há inferências de valores contábeis.
-- **Integração de Frequências Heterogêneas:** O fluxo lida com fontes de diferentes frequências de atualização (diária como CAUC e PNCP, bimestral/quadrimestral como SICONFI e anual como DCA) consolidando-as em uma mesma "janela de liquidez" no dbt (Data Build Tool).
-- **Processamento Incremental e Escalável:** Os cálculos são construídos utilizando `MERGE` SQL e estratégias `incremental` no dbt, visando o menor custo computacional no BigQuery e habilitando a execução independente por estado (UF).
+- **Base territorial completa:** todos os municípios permanecem na base, inclusive os classificados como `Sem Dados`.
+- **Dados declarados:** o score usa apenas informações públicas declaradas aos sistemas oficiais, sem imputação contábil.
+- **Fluxo operacional atual:** o BigQuery é a fonte analítica principal; `CAUC`, `SICONFI` e `DCA` já publicam raw direto no BQ, enquanto `PNCP` ainda usa checkpoint local durante a coleta.
 
 ---
 
@@ -167,8 +181,9 @@ deactivate
 ```
 
 **2. Credenciais:**
-- Configure as credenciais do Google Cloud e Supabase no arquivo `.env` (use `.env.example` como base).
-- Configure seu `dbt/profiles.yml`.
+- Configure as credenciais do Google Cloud e Supabase no arquivo `.env`.
+- Configure seu `dbt/profiles.yml` a partir de [`dbt/profiles.yml.example`](dbt/profiles.yml.example).
+- Para o frontend, configure `frontend/.env.local` a partir de [`frontend/.env.local.example`](frontend/.env.local.example).
 
 **3. Execução do Orquestrador:**
 O orquestrador `pipeline.py` gerencia as etapas de forma modular e sequencial.
@@ -180,9 +195,16 @@ venv\Scripts\activate
 # Rodar o motor de score completo para uma UF
 python pipeline.py --uf PB --mode incremental --steps collect,dbt,process,score,sync
 
-# Rodar apenas as transformações de dados e recálculo da engine
-python pipeline.py --uf PB --steps dbt,score
+# Rodar coleta + transformação + recalcular score sem sync
+python pipeline.py --uf PB --mode incremental --steps collect,dbt,process,score
+
+# Rodar apenas etapas finais com dados já preparados
+python pipeline.py --uf PB --steps process,score,sync
 ```
+
+**Observação sobre `--uf ALL`:**
+- com `collect`, o fluxo suportado hoje é o incremental previsto pelo orquestrador
+- sem `collect`, ele aceita apenas `process`, `score` e `sync`
 
 ---
 
@@ -208,4 +230,4 @@ pytest -v
 
 ## Como citar
 
-> SolveLicita. *Score de Solvência Municipal — Paraíba*. 2026. Disponível em: https://solvelicita.tech. Código e metodologia: https://github.com/Fel-tby/solvelicita.
+> SolveLicita. *Score de Solvência Municipal*. 2026. Disponível em: https://solvelicita.tech. Código, metodologia e validação: https://github.com/Fel-tby/solvelicita.
