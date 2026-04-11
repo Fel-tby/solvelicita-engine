@@ -132,7 +132,7 @@ flowchart LR
 ### Decisões de Design do Pipeline
 - **Base territorial completa:** todos os municípios permanecem na base, inclusive os classificados como `Sem Dados`.
 - **Dados declarados:** o score usa apenas informações públicas declaradas aos sistemas oficiais, sem imputação contábil.
-- **Fluxo operacional atual:** o BigQuery é a fonte analítica principal; `CAUC`, `SICONFI` e `DCA` já publicam raw direto no BQ, enquanto `PNCP` ainda usa checkpoint local durante a coleta.
+- **Fluxo operacional atual:** o BigQuery é a fonte analítica principal; `municipios`, `CAUC`, `SICONFI` e `DCA` já publicam raw direto no BQ com carga segura, enquanto `PNCP` ainda usa checkpoint local durante a coleta.
 
 ---
 

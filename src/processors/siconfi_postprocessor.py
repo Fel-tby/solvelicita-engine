@@ -1,72 +1,73 @@
 """
-siconfi_postprocessor.py — Bloco 7
-Lê int_eorcam + int_lliq_base do BigQuery.
-Replica exatamente a lógica do lliq_scorer.py + eorcam_scorer.py.
-Atualiza mart.mart_indicadores_municipios via MERGE.
+siconfi_postprocessor.py - Bloco 7
+Le int_eorcam + int_lliq_base do BigQuery.
+Replica exatamente a logica do lliq_scorer.py + eorcam_scorer.py.
+Atualiza intermediate.int_siconfi_postprocessed via BigQuery MERGE.
 """
 
 import sys
-from pathlib import Path
-sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
-
-import os
-import pandas as pd
 from datetime import date
-from dotenv import load_dotenv
-from google.cloud import bigquery
-from utils.paths import get_paths
+from pathlib import Path
 
-load_dotenv()
-if key := os.getenv("GCP_SA_KEY_PATH"):
-    os.environ["GOOGLE_APPLICATION_CREDENTIALS"] = key
+import pandas as pd
 
+sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 from scorers.config import (
-    PESOS_ANO,
-    LIMIAR_LLIQ_SUSPEITO,
+    FIM_PERIODO_MES,
     JANELA_RGF_BIMESTRAL,
     JANELA_RGF_SEMESTRAL,
-    FIM_PERIODO_MES,
+    LIMIAR_LLIQ_SUSPEITO,
+    PESOS_ANO,
 )
+from utils.bigquery_loader import (
+    get_bigquery_project,
+    merge_dataframe_to_table,
+    query_to_dataframe,
+)
+from utils.paths import get_paths
 
-PROJECT      = "solvelicita"
-DATASET_I    = "intermediate"
-DATASET_M    = "mart"
-TABLE_TARGET = f"{PROJECT}.{DATASET_I}.int_siconfi_postprocessed"
-HOJE         = date.today()
+
+DATASET_I = "intermediate"
+DATASET_M = "mart"
+HOJE = date.today()
 
 
-def _bq(client: bigquery.Client, table: str, uf: str) -> pd.DataFrame:
+def _project() -> str:
+    return get_bigquery_project()
+
+
+def _bq(table: str, uf: str) -> pd.DataFrame:
+    project = _project()
     query = f"""
-        SELECT t.* 
-        FROM `{PROJECT}.{DATASET_I}.{table}` t
-        JOIN `{PROJECT}.staging.stg_municipios` m 
+        SELECT t.*
+        FROM `{project}.{DATASET_I}.{table}` t
+        JOIN `{project}.staging.stg_municipios` m
           ON t.cod_ibge = m.cod_ibge
         WHERE m.uf = '{uf}'
     """
-    return client.query(query).to_dataframe()
+    return query_to_dataframe(query, strict=True)
 
 
-def _bq_anuais(client: bigquery.Client, uf: str) -> pd.DataFrame:
+def _bq_anuais(uf: str) -> pd.DataFrame:
+    project = _project()
     query = f"""
         SELECT *
-        FROM `{PROJECT}.{DATASET_I}.int_siconfi_indicadores_anuais`
+        FROM `{project}.{DATASET_I}.int_siconfi_indicadores_anuais`
         WHERE uf = '{uf}'
         ORDER BY instituicao, ano
     """
-    return client.query(query).to_dataframe()
+    return query_to_dataframe(query, strict=True)
 
 
-def _bq_mart_pop(client: bigquery.Client) -> pd.DataFrame:
+def _bq_mart_pop() -> pd.DataFrame:
     """Busca populacao do mart para usar no decay."""
-    return client.query(
-        f"SELECT cod_ibge, populacao FROM `{PROJECT}.{DATASET_M}.mart_indicadores_municipios`"
-    ).to_dataframe()
+    project = _project()
+    query = f"SELECT cod_ibge, populacao FROM `{project}.{DATASET_M}.mart_indicadores_municipios`"
+    return query_to_dataframe(query, strict=True)
 
-
-# ── eorcam ────────────────────────────────────────────────────────────────────
 
 def _eorcam_ponderado(df: pd.DataFrame) -> pd.DataFrame:
-    """Média ponderada por PESOS_ANO. Grain: cod_ibge."""
+    """Media ponderada por PESOS_ANO. Grain: cod_ibge."""
     df = df[df["entregou_rreo"] == True].copy()
     df["peso"] = df["ano"].map(PESOS_ANO).fillna(0)
     df = df[df["peso"] > 0]
@@ -74,7 +75,7 @@ def _eorcam_ponderado(df: pd.DataFrame) -> pd.DataFrame:
         df.groupby("cod_ibge")
         .apply(
             lambda g: (g["eorcam_raw"] * g["peso"]).sum() / g["peso"].sum(),
-            include_groups=False
+            include_groups=False,
         )
         .reset_index()
         .rename(columns={0: "eorcam_raw"})
@@ -83,21 +84,19 @@ def _eorcam_ponderado(df: pd.DataFrame) -> pd.DataFrame:
     return agg
 
 
-# ── lliq ──────────────────────────────────────────────────────────────────────
-
 def _dias_atraso(ano: int, periodo: int, periodicidade: str) -> int:
     """
     Replica _dias_atraso do lliq_scorer.py.
-    Adiciona 2 meses de prazo de publicação ao fim do período RGF.
+    Adiciona 2 meses de prazo de publicacao ao fim do periodo RGF.
     """
     if pd.isna(periodo) or pd.isna(periodicidade):
         return 999
     key = (str(periodicidade), int(periodo))
     if key not in FIM_PERIODO_MES:
         return 999
-    mes_pub  = FIM_PERIODO_MES[key] + 2
-    ano_pub  = int(ano) + (1 if mes_pub > 12 else 0)
-    mes_pub  = mes_pub - 12 if mes_pub > 12 else mes_pub
+    mes_pub = FIM_PERIODO_MES[key] + 2
+    ano_pub = int(ano) + (1 if mes_pub > 12 else 0)
+    mes_pub = mes_pub - 12 if mes_pub > 12 else mes_pub
     try:
         return max(0, (HOJE - date(ano_pub, mes_pub, 1)).days)
     except Exception:
@@ -114,14 +113,14 @@ def _decay(dias: int, populacao: int) -> float:
 
 def _lliq(df: pd.DataFrame, df_pop: pd.DataFrame) -> pd.DataFrame:
     """
-    Seleciona o RGF mais recente por município. Grain de saída: cod_ibge.
+    Seleciona o RGF mais recente por municipio. Grain de saida: cod_ibge.
     Prioridade: Q > S no mesmo ano (igual ao lliq_scorer).
     """
     df = df.copy()
     df["_prior_per"] = (df["periodicidade_rgf"] == "Q").astype(int)
     df = df.sort_values(
         ["cod_ibge", "ano", "periodo_rgf", "_prior_per"],
-        ascending=[True, False, False, False]
+        ascending=[True, False, False, False],
     )
 
     df = df.merge(df_pop[["cod_ibge", "populacao"]], on="cod_ibge", how="left")
@@ -137,156 +136,127 @@ def _lliq(df: pd.DataFrame, df_pop: pd.DataFrame) -> pd.DataFrame:
                 continue
 
             if pd.notnull(row["dcl_apos_rp_total"]):
-                rpps     = row["dcl_apos_rp_rpps"] if pd.notnull(row["dcl_apos_rp_rpps"]) else 0.0
+                rpps = row["dcl_apos_rp_rpps"] if pd.notnull(row["dcl_apos_rp_rpps"]) else 0.0
                 lliq_raw = round((row["dcl_apos_rp_total"] - rpps) / rec, 6)
-                parcial  = False
+                parcial = False
             elif pd.notnull(row["dcl_pre_rp_total"]):
-                rpps     = row["dcl_pre_rp_rpps"] if pd.notnull(row["dcl_pre_rp_rpps"]) else 0.0
+                rpps = row["dcl_pre_rp_rpps"] if pd.notnull(row["dcl_pre_rp_rpps"]) else 0.0
                 lliq_raw = round((row["dcl_pre_rp_total"] - rpps) / rec, 6)
-                parcial  = True
+                parcial = True
             else:
                 continue
 
-            dias     = _dias_atraso(int(row["ano"]), int(row["periodo_rgf"]), str(row["periodicidade_rgf"]))
-            decay    = _decay(dias, pop)
-            janela   = JANELA_RGF_BIMESTRAL if pop > 50_000 else JANELA_RGF_SEMESTRAL
+            dias = _dias_atraso(int(row["ano"]), int(row["periodo_rgf"]), str(row["periodicidade_rgf"]))
+            decay = _decay(dias, pop)
+            janela = JANELA_RGF_BIMESTRAL if pop > 50_000 else JANELA_RGF_SEMESTRAL
 
-            records.append({
-                "cod_ibge":           cod_ibge,
-                "lliq_raw":           lliq_raw,
-                "lliq_parcial":       parcial,
-                "dias_atraso":        dias,
-                "decay_fator":        decay,
-                "dado_suspeito_lliq": bool(lliq_raw < LIMIAR_LLIQ_SUSPEITO),
-                "dado_defasado":      bool(dias > janela),
-            })
+            records.append(
+                {
+                    "cod_ibge": cod_ibge,
+                    "lliq_raw": lliq_raw,
+                    "lliq_parcial": parcial,
+                    "dias_atraso": dias,
+                    "decay_fator": decay,
+                    "dado_suspeito_lliq": bool(lliq_raw < LIMIAR_LLIQ_SUSPEITO),
+                    "dado_defasado": bool(dias > janela),
+                }
+            )
             found = True
             break
 
         if not found:
-            records.append({
-                "cod_ibge":           cod_ibge,
-                "lliq_raw":           None,
-                "lliq_parcial":       False,
-                "dias_atraso":        None,
-                "decay_fator":        None,
-                "dado_suspeito_lliq": False,
-                "dado_defasado":      False,
-            })
+            records.append(
+                {
+                    "cod_ibge": cod_ibge,
+                    "lliq_raw": None,
+                    "lliq_parcial": False,
+                    "dias_atraso": None,
+                    "decay_fator": None,
+                    "dado_suspeito_lliq": False,
+                    "dado_defasado": False,
+                }
+            )
 
     return pd.DataFrame(records)
 
 
-# ── BQ MERGE ──────────────────────────────────────────────────────────────────
-
-def _merge_bq(client: bigquery.Client, df: pd.DataFrame, uf: str) -> None:
-    # Schema da tabela destino
-    schema_target = [
-        bigquery.SchemaField("cod_ibge", "INT64"),
-        bigquery.SchemaField("uf", "STRING"),
-        bigquery.SchemaField("eorcam_raw", "FLOAT64"),
-        bigquery.SchemaField("lliq_raw", "FLOAT64"),
-        bigquery.SchemaField("lliq_parcial", "BOOL"),
-        bigquery.SchemaField("dias_atraso", "INT64"),
-        bigquery.SchemaField("decay_fator", "FLOAT64"),
-        bigquery.SchemaField("dado_suspeito_lliq", "BOOL"),
-        bigquery.SchemaField("dado_defasado", "BOOL"),
-        bigquery.SchemaField("updated_at", "TIMESTAMP"),
+def _merge_bq(df: pd.DataFrame, uf: str) -> None:
+    project = _project()
+    table_ref = f"{project}.{DATASET_I}.int_siconfi_postprocessed"
+    temp_ref = f"{project}.{DATASET_M}._tmp_siconfi_post"
+    schema_spec = [
+        ("cod_ibge", "INT64"),
+        ("uf", "STRING"),
+        ("eorcam_raw", "FLOAT64"),
+        ("lliq_raw", "FLOAT64"),
+        ("lliq_parcial", "BOOL"),
+        ("dias_atraso", "INT64"),
+        ("decay_fator", "FLOAT64"),
+        ("dado_suspeito_lliq", "BOOL"),
+        ("dado_defasado", "BOOL"),
+        ("updated_at", "TIMESTAMP"),
     ]
-    table = bigquery.Table(TABLE_TARGET, schema=schema_target)
-    client.create_table(table, exists_ok=True)
 
-    # Schema da tabela temporária (o pandas não gera updated_at)
-    schema_tmp = [f for f in schema_target if f.name != "updated_at"]
+    df_upload = df.copy()
+    df_upload["uf"] = uf
 
-    df["uf"] = uf
-    tmp = f"{PROJECT}.{DATASET_M}._tmp_siconfi_post"
-
-    job = client.load_table_from_dataframe(
-        df, tmp,
-        job_config=bigquery.LoadJobConfig(
-            write_disposition="WRITE_TRUNCATE",
-            schema=schema_tmp
-        )
+    merge_dataframe_to_table(
+        df_upload,
+        table_ref=table_ref,
+        schema_spec=schema_spec,
+        key_cols=["cod_ibge"],
+        temp_table_ref=temp_ref,
+        extra_update_assignments={"updated_at": "CURRENT_TIMESTAMP()"},
+        extra_insert_values={"updated_at": "CURRENT_TIMESTAMP()"},
     )
-    job.result()
+    print(f"  OK MERGE concluido - {len(df_upload)} linhas em int_siconfi_postprocessed")
 
-    client.query(f"""
-    MERGE `{TABLE_TARGET}` T
-    USING `{tmp}` S ON T.cod_ibge = S.cod_ibge
-    WHEN MATCHED THEN UPDATE SET
-        T.uf                  = S.uf,
-        T.eorcam_raw          = S.eorcam_raw,
-        T.lliq_raw            = S.lliq_raw,
-        T.lliq_parcial        = S.lliq_parcial,
-        T.dias_atraso         = CAST(S.dias_atraso AS INT64),
-        T.decay_fator         = S.decay_fator,
-        T.dado_suspeito_lliq  = S.dado_suspeito_lliq,
-        T.dado_defasado       = S.dado_defasado,
-        T.updated_at          = CURRENT_TIMESTAMP()
-    WHEN NOT MATCHED THEN INSERT (
-        cod_ibge, uf, eorcam_raw, lliq_raw, lliq_parcial, dias_atraso,
-        decay_fator, dado_suspeito_lliq, dado_defasado, updated_at
-    ) VALUES (
-        S.cod_ibge, S.uf, S.eorcam_raw, S.lliq_raw, S.lliq_parcial, CAST(S.dias_atraso AS INT64),
-        S.decay_fator, S.dado_suspeito_lliq, S.dado_defasado, CURRENT_TIMESTAMP()
-    )
-    """).result()
-
-    client.delete_table(tmp, not_found_ok=True)
-    print(f"  ✅ MERGE concluído — {len(df)} linhas em int_siconfi_postprocessed")
-
-
-# ── entry point ───────────────────────────────────────────────────────────────
 
 def run(uf: str = "PB") -> None:
     print("=" * 60)
-    print(" siconfi_postprocessor — Bloco 7")
+    print(" siconfi_postprocessor - Bloco 7")
     print(f" UF: {uf}")
     print("=" * 60)
 
-    client = bigquery.Client(project=PROJECT)
-
-    print("\n── Lendo int_eorcam...")
-    df_eorcam = _bq(client, "int_eorcam", uf=uf)
+    print("\n-- Lendo int_eorcam...")
+    df_eorcam = _bq("int_eorcam", uf=uf)
     df_eorcam["cod_ibge"] = df_eorcam["cod_ibge"].astype("Int64")
     df_eorcam_m = _eorcam_ponderado(df_eorcam)
-    print(f"   {len(df_eorcam_m)} municípios com eorcam_raw")
+    print(f"   {len(df_eorcam_m)} municipios com eorcam_raw")
 
-    print("\n── Lendo int_lliq_base...")
-    df_lliq = _bq(client, "int_lliq_base", uf=uf)
-    df_lliq["cod_ibge"]   = df_lliq["cod_ibge"].astype("Int64")
+    print("\n-- Lendo int_lliq_base...")
+    df_lliq = _bq("int_lliq_base", uf=uf)
+    df_lliq["cod_ibge"] = df_lliq["cod_ibge"].astype("Int64")
 
-    print("\n── Buscando populacao do mart...")
-    df_pop = _bq_mart_pop(client)
-    df_pop["cod_ibge"]    = df_pop["cod_ibge"].astype("Int64")
+    print("\n-- Buscando populacao do mart...")
+    df_pop = _bq_mart_pop()
+    df_pop["cod_ibge"] = df_pop["cod_ibge"].astype("Int64")
 
     df_lliq_m = _lliq(df_lliq, df_pop)
-    print(f"   {df_lliq_m['lliq_raw'].notna().sum()} municípios com lliq_raw")
-    print(f"   {df_lliq_m['lliq_parcial'].sum()} com lliq_parcial (pré-RPNP)")
+    print(f"   {df_lliq_m['lliq_raw'].notna().sum()} municipios com lliq_raw")
+    print(f"   {df_lliq_m['lliq_parcial'].sum()} com lliq_parcial (pre-RPNP)")
     print(f"   {df_lliq_m['dado_defasado'].sum()} com dado_defasado")
 
-    print("\n── Fazendo MERGE em int_siconfi_postprocessed...")
+    print("\n-- Fazendo MERGE em int_siconfi_postprocessed...")
     merged = df_eorcam_m.merge(df_lliq_m, on="cod_ibge", how="outer")
-    _merge_bq(client, merged, uf=uf)
+    _merge_bq(merged, uf=uf)
 
-    # Exportacao local equivalente ao legado anual do SICONFI.
     paths = get_paths(uf)
     csv_anuais = paths["processed"] / f"siconfi_indicadores_{uf.lower()}.csv"
-    df_anuais = _bq_anuais(client, uf=uf)
+    df_anuais = _bq_anuais(uf=uf)
     df_anuais.to_csv(csv_anuais, index=False)
-    print(f"  💾 Exportado local: {csv_anuais.name}")
+    print(f"  Exportado local: {csv_anuais.name}")
 
-    # Exportacao local do resumo atual por municipio usado no fluxo novo.
     csv_resumo = paths["processed"] / f"siconfi_postprocessed_{uf.lower()}.csv"
     merged.to_csv(csv_resumo, index=False)
-    print(f"  💾 Exportado local: {csv_resumo.name}")
+    print(f"  Exportado local: {csv_resumo.name}")
 
-    print("\n✅ siconfi_postprocessor concluído.")
+    print("\nOK siconfi_postprocessor concluido.")
 
 
 if __name__ == "__main__":
     import argparse
+
     parser = argparse.ArgumentParser()
     parser.add_argument("--uf", default="PB")
     args = parser.parse_args()

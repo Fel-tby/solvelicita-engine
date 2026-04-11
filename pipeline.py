@@ -176,6 +176,7 @@ def etapa_score(uf: str, mode: str | None = None) -> None:
     solvency.run(
         uf=uf,
         source="bigquery",
+        strict_bigquery=True,
         publish_snapshot=True,
         run_type="pipeline",
         pipeline_mode=mode,

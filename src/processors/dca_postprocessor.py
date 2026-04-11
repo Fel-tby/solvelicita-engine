@@ -1,45 +1,49 @@
 """
 dca_postprocessor.py
-Lê int_autonomia_base do BigQuery.
+Le int_autonomia_base do BigQuery.
 Calcula:
-  - autonomia_media   : média 2020–2024 por município
+  - autonomia_media   : media 2020-2024 por municipio
   - autonomia_critica : True se autonomia_media < 0.08
-Atualiza mart.mart_indicadores_municipios via BigQuery MERGE.
+Atualiza intermediate.int_dca_postprocessed via BigQuery MERGE.
 """
 
 import sys
 from pathlib import Path
-sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
-import os
 import pandas as pd
-from dotenv import load_dotenv
-from google.cloud import bigquery
-from utils.paths import get_paths
+
+sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 from scorers.config import LIMIAR_AUTONOMIA_CRIT
+from utils.bigquery_loader import (
+    get_bigquery_project,
+    merge_dataframe_to_table,
+    query_to_dataframe,
+)
+from utils.paths import get_paths
 
-load_dotenv()
-if key := os.getenv("GCP_SA_KEY_PATH"):
-    os.environ["GOOGLE_APPLICATION_CREDENTIALS"] = key
 
-PROJECT      = "solvelicita"
-DATASET_I    = "intermediate"
-DATASET_M    = "mart"
-TABLE_TARGET = f"{PROJECT}.{DATASET_I}.int_dca_postprocessed"
+DATASET_I = "intermediate"
+DATASET_M = "mart"
 
-def _bq(client: bigquery.Client, table: str, uf: str) -> pd.DataFrame:
+
+def _project() -> str:
+    return get_bigquery_project()
+
+
+def _bq(table: str, uf: str) -> pd.DataFrame:
+    project = _project()
     query = f"""
-        SELECT t.* 
-        FROM `{PROJECT}.{DATASET_I}.{table}` t
-        JOIN `{PROJECT}.staging.stg_municipios` m 
+        SELECT t.*
+        FROM `{project}.{DATASET_I}.{table}` t
+        JOIN `{project}.staging.stg_municipios` m
           ON t.cod_ibge = m.cod_ibge
         WHERE m.uf = '{uf}'
     """
-    return client.query(query).to_dataframe()
+    return query_to_dataframe(query, strict=True)
 
 
 def _calcular_autonomia(df: pd.DataFrame) -> pd.DataFrame:
-    """Grain de saída: cod_ibge."""
+    """Grain de saida: cod_ibge."""
     agg = (
         df.groupby("cod_ibge")
         .agg(autonomia_media=("autonomia_raw", "mean"))
@@ -52,82 +56,61 @@ def _calcular_autonomia(df: pd.DataFrame) -> pd.DataFrame:
     return agg
 
 
-def _merge_bq(client: bigquery.Client, df: pd.DataFrame, uf: str) -> None:
-    # Schema da tabela destino
-    schema_target = [
-        bigquery.SchemaField("cod_ibge", "INT64"),
-        bigquery.SchemaField("uf", "STRING"),
-        bigquery.SchemaField("autonomia_media", "FLOAT64"),
-        bigquery.SchemaField("autonomia_critica", "BOOL"),
-        bigquery.SchemaField("updated_at", "TIMESTAMP"),
+def _merge_bq(df: pd.DataFrame, uf: str) -> None:
+    project = _project()
+    table_ref = f"{project}.{DATASET_I}.int_dca_postprocessed"
+    temp_ref = f"{project}.{DATASET_M}._tmp_dca_post"
+    schema_spec = [
+        ("cod_ibge", "INT64"),
+        ("uf", "STRING"),
+        ("autonomia_media", "FLOAT64"),
+        ("autonomia_critica", "BOOL"),
+        ("updated_at", "TIMESTAMP"),
     ]
-    table = bigquery.Table(TABLE_TARGET, schema=schema_target)
-    client.create_table(table, exists_ok=True)
 
-    # Schema da tabela temporária (sem updated_at)
-    schema_tmp = [f for f in schema_target if f.name != "updated_at"]
+    df_upload = df.copy()
+    df_upload["uf"] = uf
 
-    df["uf"] = uf
-    tmp = f"{PROJECT}.{DATASET_M}._tmp_dca_post"
-
-    job = client.load_table_from_dataframe(
-        df, tmp,
-        job_config=bigquery.LoadJobConfig(
-            write_disposition="WRITE_TRUNCATE",
-            schema=schema_tmp
-        )
+    merge_dataframe_to_table(
+        df_upload,
+        table_ref=table_ref,
+        schema_spec=schema_spec,
+        key_cols=["cod_ibge"],
+        temp_table_ref=temp_ref,
+        extra_update_assignments={"updated_at": "CURRENT_TIMESTAMP()"},
+        extra_insert_values={"updated_at": "CURRENT_TIMESTAMP()"},
     )
-    job.result()
-
-    merge_sql = f"""
-    MERGE `{TABLE_TARGET}` T
-    USING `{tmp}` S ON T.cod_ibge = S.cod_ibge
-    WHEN MATCHED THEN UPDATE SET
-        T.uf                 = S.uf,
-        T.autonomia_media    = S.autonomia_media,
-        T.autonomia_critica  = S.autonomia_critica,
-        T.updated_at         = CURRENT_TIMESTAMP()
-    WHEN NOT MATCHED THEN INSERT (
-        cod_ibge, uf, autonomia_media, autonomia_critica, updated_at
-    ) VALUES (
-        S.cod_ibge, S.uf, S.autonomia_media, S.autonomia_critica, CURRENT_TIMESTAMP()
-    )
-    """
-    client.query(merge_sql).result()
-    client.delete_table(tmp, not_found_ok=True)
-    print(f"  ✅ MERGE concluído — {len(df)} municípios em int_dca_postprocessed")
+    print(f"  OK MERGE concluido - {len(df_upload)} municipios em int_dca_postprocessed")
 
 
 def run(uf: str = "PB") -> None:
     print("=" * 60)
-    print(" dca_postprocessor — Bloco 7")
+    print(" dca_postprocessor - Bloco 7")
     print(f" UF: {uf}")
     print("=" * 60)
 
-    client = bigquery.Client(project=PROJECT)
-
-    print("\n── Lendo int_autonomia_base...")
-    df = _bq(client, "int_autonomia_base", uf=uf)
+    print("\n-- Lendo int_autonomia_base...")
+    df = _bq("int_autonomia_base", uf=uf)
     df["cod_ibge"] = df["cod_ibge"].astype("Int64")
 
     df_m = _calcular_autonomia(df)
-    print(f"   {df_m['autonomia_media'].notna().sum()} municípios com autonomia_media")
+    print(f"   {df_m['autonomia_media'].notna().sum()} municipios com autonomia_media")
     print(f"   {df_m['autonomia_critica'].sum()} com autonomia_critica")
 
-    print("\n── Fazendo MERGE em int_dca_postprocessed...")
-    _merge_bq(client, df_m, uf=uf)
+    print("\n-- Fazendo MERGE em int_dca_postprocessed...")
+    _merge_bq(df_m, uf=uf)
 
-    # Exportação Local (Audit)
     paths = get_paths(uf)
     csv_path = paths["processed"] / f"dca_indicadores_{uf.lower()}.csv"
     df_m.to_csv(csv_path, index=False)
-    print(f"  💾 Exportado local: {csv_path.name}")
+    print(f"  Exportado local: {csv_path.name}")
 
-    print("\n✅ dca_postprocessor concluído.")
+    print("\nOK dca_postprocessor concluido.")
 
 
 if __name__ == "__main__":
     import argparse
+
     parser = argparse.ArgumentParser()
     parser.add_argument("--uf", default="PB")
     args = parser.parse_args()

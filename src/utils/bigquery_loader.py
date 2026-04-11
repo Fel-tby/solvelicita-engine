@@ -89,12 +89,171 @@ def get_bigquery_project() -> str:
     return _cfg()["project"]
 
 
+def _import_bigquery():
+    if not _check_bq_available():
+        raise RuntimeError(
+            "google-cloud-bigquery nao instalado. "
+            "Execute: pip install google-cloud-bigquery"
+        )
+    from google.cloud import bigquery
+
+    return bigquery
+
+
+def _ensure_bigquery_readable(layer: str, table: str, uf: str | None = None) -> None:
+    if is_bigquery_enabled():
+        return
+
+    target = f"{layer}.{table}"
+    scope = f" uf={uf.upper()}" if uf else ""
+    raise RuntimeError(
+        "Leitura canonica via BigQuery indisponivel para "
+        f"{target}{scope}. Verifique BQ_ENABLED, GCP_SA_KEY_PATH e as credenciais."
+    )
+
+
 def _sanitize_column_name(name: str, index: int) -> str:
     value = re.sub(r"[^a-zA-Z0-9_]", "_", str(name)).lower()
     if value and value[0].isdigit():
         value = "c_" + value
     value = re.sub(r"^_+", "", value) or f"col_{index}"
     return value
+
+
+def query_to_dataframe(query: str, *, strict: bool = True) -> pd.DataFrame:
+    """
+    Executa uma consulta SQL no BigQuery e retorna DataFrame.
+    Em modo estrito, falha cedo se o BigQuery nao estiver disponivel.
+    """
+    if not is_bigquery_enabled():
+        if strict:
+            raise RuntimeError(
+                "BigQuery nao esta habilitado ou configurado para executar consultas."
+            )
+        logger.warning("[BQ stub] query_to_dataframe ignorado; retornando DataFrame vazio.")
+        return pd.DataFrame()
+
+    client = _get_client()
+    try:
+        return client.query(query).to_dataframe()
+    except Exception as exc:
+        if strict:
+            raise RuntimeError("Falha ao executar consulta no BigQuery.") from exc
+        raise
+
+
+def _schema_fields_from_spec(schema_spec: list[tuple[str, str]]):
+    bigquery = _import_bigquery()
+    return [bigquery.SchemaField(name, field_type) for name, field_type in schema_spec]
+
+
+def ensure_typed_table(table_ref: str, schema_spec: list[tuple[str, str]]) -> None:
+    """
+    Garante a existencia da tabela com schema tipado, adicionando colunas faltantes.
+    """
+    if not is_bigquery_enabled():
+        raise RuntimeError(
+            f"BigQuery nao esta habilitado para garantir schema da tabela {table_ref}."
+        )
+
+    client = _get_client()
+    bigquery = _import_bigquery()
+
+    from google.api_core.exceptions import NotFound
+
+    spec_map = {name: field_type for name, field_type in schema_spec}
+
+    try:
+        table = client.get_table(table_ref)
+        existing = {field.name: field.field_type for field in table.schema}
+    except NotFound:
+        schema = _schema_fields_from_spec(schema_spec)
+        client.create_table(bigquery.Table(table_ref, schema=schema))
+        existing = spec_map
+
+    missing = [name for name in spec_map if name not in existing]
+    for name in missing:
+        sql = (
+            f"ALTER TABLE `{table_ref}` "
+            f"ADD COLUMN IF NOT EXISTS `{name}` {spec_map[name]}"
+        )
+        client.query(sql).result()
+
+
+def merge_dataframe_to_table(
+    df: pd.DataFrame,
+    *,
+    table_ref: str,
+    schema_spec: list[tuple[str, str]],
+    key_cols: list[str],
+    temp_table_ref: str | None = None,
+    extra_update_assignments: dict[str, str] | None = None,
+    extra_insert_values: dict[str, str] | None = None,
+) -> None:
+    """
+    Faz MERGE tipado de um DataFrame em uma tabela BigQuery via staging temporaria.
+    """
+    if not is_bigquery_enabled():
+        raise RuntimeError(
+            f"BigQuery nao esta habilitado para MERGE na tabela {table_ref}."
+        )
+    if df.empty:
+        logger.warning("[BQ] merge_dataframe_to_table recebeu DataFrame vazio para %s", table_ref)
+        return
+
+    for col in key_cols:
+        if col not in df.columns:
+            raise ValueError(f"Coluna-chave ausente para MERGE tipado: {col}")
+
+    client = _get_client()
+    bigquery = _import_bigquery()
+    ensure_typed_table(table_ref, schema_spec)
+
+    if temp_table_ref is None:
+        temp_table_ref = (
+            f"{table_ref.rsplit('.', 1)[0]}."
+            f"__tmp_merge_{int(time.time())}_{uuid4().hex[:8]}"
+        )
+
+    schema_map = {name: field_type for name, field_type in schema_spec}
+    temp_spec = [(name, schema_map[name]) for name in df.columns if name in schema_map]
+    temp_schema = [bigquery.SchemaField(name, field_type) for name, field_type in temp_spec]
+
+    job_config = bigquery.LoadJobConfig(
+        write_disposition=bigquery.WriteDisposition.WRITE_TRUNCATE,
+        schema=temp_schema,
+    )
+
+    extra_update_assignments = extra_update_assignments or {}
+    extra_insert_values = extra_insert_values or {}
+
+    update_cols = [col for col in df.columns if col not in key_cols]
+    update_parts = [f"T.`{col}` = S.`{col}`" for col in update_cols]
+    update_parts.extend(
+        [f"T.`{col}` = {expression}" for col, expression in extra_update_assignments.items()]
+    )
+
+    insert_cols = list(df.columns) + list(extra_insert_values.keys())
+    insert_vals = [f"S.`{col}`" for col in df.columns]
+    insert_vals.extend(extra_insert_values.values())
+
+    on_clause = " AND ".join([f"T.`{col}` = S.`{col}`" for col in key_cols])
+    merge_sql = f"""
+MERGE `{table_ref}` T
+USING `{temp_table_ref}` S
+ON {on_clause}
+WHEN MATCHED THEN
+  UPDATE SET {", ".join(update_parts)}
+WHEN NOT MATCHED THEN
+  INSERT ({", ".join([f"`{col}`" for col in insert_cols])})
+  VALUES ({", ".join(insert_vals)})
+""".strip()
+
+    try:
+        client.load_table_from_dataframe(df.copy(), temp_table_ref, job_config=job_config).result()
+        client.query(merge_sql).result()
+    finally:
+        client.delete_table(temp_table_ref, not_found_ok=True)
 
 
 def _sanitize(df: pd.DataFrame, uf: str) -> pd.DataFrame:
@@ -324,7 +483,7 @@ def publish_raw_merge(
         client.delete_table(temp_ref, not_found_ok=True)
 
 
-def read_mart(table: str, uf: str | None = None) -> pd.DataFrame:
+def read_mart(table: str, uf: str | None = None, *, strict: bool = False) -> pd.DataFrame:
     """
     Le uma tabela do mart do BigQuery.
     Fallback para CSV local quando BigQuery nao esta disponivel.
@@ -332,6 +491,8 @@ def read_mart(table: str, uf: str | None = None) -> pd.DataFrame:
     cfg = _cfg()
 
     if not cfg["enabled"] or not _check_bq_available() or not cfg["sa_path"]:
+        if strict:
+            _ensure_bigquery_readable("mart", table, uf)
         return _read_mart_csv_fallback(table, uf)
 
     client = _get_client()
@@ -340,10 +501,17 @@ def read_mart(table: str, uf: str | None = None) -> pd.DataFrame:
     query = f"SELECT * FROM `{table_ref}` {uf_filter}"
 
     logger.info("[BQ] read_mart: %s uf=%s", table_ref, uf or "nacional")
-    return client.query(query).to_dataframe()
+    try:
+        return client.query(query).to_dataframe()
+    except Exception as exc:
+        if strict:
+            raise RuntimeError(
+                f"Falha ao ler mart via BigQuery: {table_ref} uf={uf or 'nacional'}"
+            ) from exc
+        raise
 
 
-def read_intermediate(table: str, uf: str | None = None) -> pd.DataFrame:
+def read_intermediate(table: str, uf: str | None = None, *, strict: bool = False) -> pd.DataFrame:
     """
     Le uma tabela da camada intermediate do BigQuery.
     Retorna DataFrame vazio quando BigQuery nao esta disponivel.
@@ -351,6 +519,8 @@ def read_intermediate(table: str, uf: str | None = None) -> pd.DataFrame:
     cfg = _cfg()
 
     if not cfg["enabled"] or not _check_bq_available() or not cfg["sa_path"]:
+        if strict:
+            _ensure_bigquery_readable("intermediate", table, uf)
         logger.warning(
             "[BQ stub] read_intermediate ignorado - sem fallback CSV para '%s'. "
             "Retornando DataFrame vazio.",
@@ -364,7 +534,15 @@ def read_intermediate(table: str, uf: str | None = None) -> pd.DataFrame:
     query = f"SELECT * FROM `{table_ref}` {uf_filter}"
 
     logger.info("[BQ] read_intermediate: %s uf=%s", table_ref, uf or "nacional")
-    return client.query(query).to_dataframe()
+    try:
+        return client.query(query).to_dataframe()
+    except Exception as exc:
+        if strict:
+            raise RuntimeError(
+                "Falha ao ler intermediate via BigQuery: "
+                f"{table_ref} uf={uf or 'nacional'}"
+            ) from exc
+        raise
 
 
 def _read_mart_csv_fallback(table: str, uf: str | None) -> pd.DataFrame:

@@ -1,7 +1,7 @@
 """
-Coletor de tabela base de municípios por UF (backbone geográfico).
-Consulta a API do SICONFI e salva o cadastro oficial de municípios.
-Pré-requisito para todos os demais coletores.
+Coletor de tabela base de municipios por UF (backbone geografico).
+Consulta a API do SICONFI e salva o cadastro oficial de municipios.
+Pre-requisito para todos os demais coletores.
 
 Rodar individualmente:
     python src/collectors/municipios.py
@@ -9,49 +9,101 @@ Rodar individualmente:
 """
 
 import sys
-import httpx
-import pandas as pd
 from pathlib import Path
 
+import httpx
+import pandas as pd
+
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
+from utils.bigquery_loader import publish_raw_merge
 from utils.paths import get_paths
-from utils.bigquery_loader import upload_raw
+
+
+REQUIRED_COLUMNS = ["cod_ibge", "uf", "ente", "populacao"]
+
+
+def _preparar_lote_municipios(items: list[dict], uf: str) -> pd.DataFrame:
+    """Valida e normaliza o lote bruto antes de publicar no BigQuery."""
+    df = pd.DataFrame(items).copy()
+    if df.empty:
+        raise ValueError(f"Nenhum municipio da UF {uf} foi retornado pela API.")
+
+    missing = [col for col in REQUIRED_COLUMNS if col not in df.columns]
+    if missing:
+        raise ValueError(
+            "Resposta da API de municipios sem colunas obrigatorias: "
+            f"{', '.join(missing)}"
+        )
+
+    df["uf"] = df["uf"].astype(str).str.upper().str.strip()
+    if set(df["uf"].dropna()) != {uf}:
+        raise ValueError(
+            f"Lote de municipios contem UFs divergentes do esperado '{uf}'."
+        )
+
+    df["cod_ibge"] = (
+        df["cod_ibge"]
+        .astype(str)
+        .str.strip()
+        .str.replace(r"\.0$", "", regex=True)
+        .str.zfill(7)
+    )
+    invalid_cod = df["cod_ibge"].isna() | df["cod_ibge"].eq("")
+    if invalid_cod.any():
+        raise ValueError("Lote de municipios contem cod_ibge nulo ou vazio.")
+
+    before = len(df)
+    df = (
+        df.drop_duplicates(subset=["uf", "cod_ibge"], keep="last")
+        .sort_values(["uf", "cod_ibge"])
+        .reset_index(drop=True)
+    )
+    removed = before - len(df)
+    if removed:
+        print(f"  [municipios] dedupe local: {removed} duplicatas removidas")
+
+    return df
 
 
 def run(uf: str = "PB") -> pd.DataFrame:
     """
-    Busca municípios da UF informada no SICONFI e salva CSV de referência.
+    Busca municipios da UF informada no SICONFI e salva CSV de referencia.
     Retorna DataFrame com colunas: cod_ibge, ente, cnpj, populacao, ...
     """
-    uf    = uf.upper()
+    uf = uf.upper()
     paths = get_paths(uf)
-    out   = paths["processed"] / f"municipios_{uf.lower()}_tabela.csv"
+    out = paths["processed"] / f"municipios_{uf.lower()}_tabela.csv"
 
-    print(f"Buscando municípios de {uf} no SICONFI...")
-    r     = httpx.get(
-        "https://apidatalake.tesouro.gov.br/ords/siconfi/tt/entes", timeout=30
+    print(f"Buscando municipios de {uf} no SICONFI...")
+    response = httpx.get(
+        "https://apidatalake.tesouro.gov.br/ords/siconfi/tt/entes",
+        timeout=30,
     )
-    todos = r.json().get("items", [])
+    response.raise_for_status()
+    todos = response.json().get("items", [])
 
-    municipios = [
-        e for e in todos
-        if e.get("uf") == uf and e.get("esfera") == "M"
+    items_uf = [
+        item for item in todos
+        if item.get("uf") == uf and item.get("esfera") == "M"
     ]
-    df = pd.DataFrame(municipios)
+    df = _preparar_lote_municipios(items_uf, uf)
 
-    # Primário — nova estrutura UF subfolder
     df.to_csv(out, index=False, encoding="utf-8")
-    print(f"✅ {len(df)} municípios salvos em {out}")
-
+    print(f"OK {len(df)} municipios salvos em {out}")
     print(df[["cod_ibge", "ente", "cnpj", "populacao"]].head())
 
-    upload_raw(df, "dim_municipios", uf)
+    publish_raw_merge(
+        df,
+        table="dim_municipios",
+        uf=uf,
+        key_cols=["uf", "cod_ibge"],
+    )
     return df
 
 
 if __name__ == "__main__":
     uf_arg = "PB"
-    args   = sys.argv[1:]
+    args = sys.argv[1:]
     for i, arg in enumerate(args):
         if arg == "--uf" and i + 1 < len(args):
             uf_arg = args[i + 1]

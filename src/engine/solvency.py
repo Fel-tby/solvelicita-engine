@@ -83,13 +83,13 @@ def _carregar_csv(uf: str) -> pd.DataFrame:
 
 # Carga BigQuery (novo)
 
-def _carregar_bq(uf: str) -> pd.DataFrame:
+def _carregar_bq(uf: str, *, strict_bigquery: bool = False) -> pd.DataFrame:
     from utils.bigquery_loader import read_mart, read_intermediate
 
     pesos = cfg_module.get_pesos(uf)
 
     print(f"  Lendo mart.mart_indicadores_municipios (uf={uf})...")
-    df = read_mart("mart_indicadores_municipios", uf=uf)
+    df = read_mart("mart_indicadores_municipios", uf=uf, strict=strict_bigquery)
     df["cod_ibge"] = df["cod_ibge"].astype(str).str.zfill(7)
 
     # Limpa colunas que possam existir por herança (caso dbt não tenha rodado limpo)
@@ -104,37 +104,60 @@ def _carregar_bq(uf: str) -> pd.DataFrame:
 
     # Merge PNCP
     print(f"  Lendo mart_pncp_municipios (uf={uf})...")
-    try:
-        df_pncp = read_mart("mart_pncp_municipios", uf=uf)
+    if strict_bigquery:
+        df_pncp = read_mart("mart_pncp_municipios", uf=uf, strict=True)
         if not df_pncp.empty:
             df_pncp["cod_ibge"] = df_pncp["cod_ibge"].astype(str).str.zfill(7)
             pncp_cols = ["cod_ibge", "n_licitacoes", "valor_homologado_total", "n_dispensa", "valor_hom_dispensa", "pct_dispensa", "ano_ultima_licitacao", "alerta_dispensa"]
             df_pncp = df_pncp[[c for c in pncp_cols if c in df_pncp.columns]]
             df = df.merge(df_pncp, on="cod_ibge", how="left")
-    except Exception as e:
-        print(f"  ⚠️ Erro ao carregar mart_pncp_municipios: {e}")
+    else:
+        try:
+            df_pncp = read_mart("mart_pncp_municipios", uf=uf, strict=False)
+            if not df_pncp.empty:
+                df_pncp["cod_ibge"] = df_pncp["cod_ibge"].astype(str).str.zfill(7)
+                pncp_cols = ["cod_ibge", "n_licitacoes", "valor_homologado_total", "n_dispensa", "valor_hom_dispensa", "pct_dispensa", "ano_ultima_licitacao", "alerta_dispensa"]
+                df_pncp = df_pncp[[c for c in pncp_cols if c in df_pncp.columns]]
+                df = df.merge(df_pncp, on="cod_ibge", how="left")
+        except Exception as e:
+            print(f"  ⚠️ Erro ao carregar mart_pncp_municipios: {e}")
 
     # Merge Postprocessors (SICONFI e DCA) que agora vivem em tabelas separadas
     print(f"  Lendo int_siconfi_postprocessed e int_dca_postprocessed (uf={uf})...")
-    try:
-        df_siconfi = read_intermediate("int_siconfi_postprocessed", uf=uf)
+    if strict_bigquery:
+        df_siconfi = read_intermediate("int_siconfi_postprocessed", uf=uf, strict=True)
         if not df_siconfi.empty:
             df_siconfi["cod_ibge"] = df_siconfi["cod_ibge"].astype(str).str.zfill(7)
             siconfi_cols = ["cod_ibge", "eorcam_raw", "lliq_raw", "lliq_parcial", "dias_atraso", "decay_fator", "dado_suspeito_lliq", "dado_defasado"]
             df_siconfi = df_siconfi[[c for c in siconfi_cols if c in df_siconfi.columns]]
             df = df.merge(df_siconfi, on="cod_ibge", how="left")
-    except Exception as e:
-        print(f"  ⚠️ Erro ao carregar int_siconfi_postprocessed: {e}")
 
-    try:
-        df_dca = read_intermediate("int_dca_postprocessed", uf=uf)
+        df_dca = read_intermediate("int_dca_postprocessed", uf=uf, strict=True)
         if not df_dca.empty:
             df_dca["cod_ibge"] = df_dca["cod_ibge"].astype(str).str.zfill(7)
             dca_cols = ["cod_ibge", "autonomia_media", "autonomia_critica"]
             df_dca = df_dca[[c for c in dca_cols if c in df_dca.columns]]
             df = df.merge(df_dca, on="cod_ibge", how="left")
-    except Exception as e:
-        print(f"  ⚠️ Erro ao carregar int_dca_postprocessed: {e}")
+    else:
+        try:
+            df_siconfi = read_intermediate("int_siconfi_postprocessed", uf=uf, strict=False)
+            if not df_siconfi.empty:
+                df_siconfi["cod_ibge"] = df_siconfi["cod_ibge"].astype(str).str.zfill(7)
+                siconfi_cols = ["cod_ibge", "eorcam_raw", "lliq_raw", "lliq_parcial", "dias_atraso", "decay_fator", "dado_suspeito_lliq", "dado_defasado"]
+                df_siconfi = df_siconfi[[c for c in siconfi_cols if c in df_siconfi.columns]]
+                df = df.merge(df_siconfi, on="cod_ibge", how="left")
+        except Exception as e:
+            print(f"  ⚠️ Erro ao carregar int_siconfi_postprocessed: {e}")
+
+        try:
+            df_dca = read_intermediate("int_dca_postprocessed", uf=uf, strict=False)
+            if not df_dca.empty:
+                df_dca["cod_ibge"] = df_dca["cod_ibge"].astype(str).str.zfill(7)
+                dca_cols = ["cod_ibge", "autonomia_media", "autonomia_critica"]
+                df_dca = df_dca[[c for c in dca_cols if c in df_dca.columns]]
+                df = df.merge(df_dca, on="cod_ibge", how="left")
+        except Exception as e:
+            print(f"  ⚠️ Erro ao carregar int_dca_postprocessed: {e}")
 
     print(f"  {len(df)} municípios base carregados e cruzados")
 
@@ -212,6 +235,7 @@ def run(
     uf: str = "PB",
     source: str = "csv",
     *,
+    strict_bigquery: bool = False,
     publish_snapshot: bool = False,
     run_type: str = "manual",
     pipeline_mode: str | None = None,
@@ -219,17 +243,20 @@ def run(
     snapshot_notes: str | None = None,
 ) -> pd.DataFrame:
     pesos = cfg_module.get_pesos(uf)
+    source_label = source
+    if source == "bigquery":
+        source_label = "bigquery (strict)" if strict_bigquery else "bigquery (fallback permitido)"
 
     print("=" * 65)
     print(f" Score de Solvência — SolveLicita {VERSION}")
-    print(f" UF: {uf} | Fonte: {source}")
+    print(f" UF: {uf} | Fonte: {source_label}")
     print(f" Pesos: Lliq={pesos['lliq']} | Ccauc={pesos['ccauc']} | "
           f"Eorcam={pesos['eorcam']} | Qsi={pesos['qsiconfi']} | "
           f"Aut={pesos['autonomia']} | RPproc={pesos['rproc']}")
     print("=" * 65)
 
-    print(f"\n📂 Carregando dados (source={source})...")
-    df = _carregar_bq(uf) if source == "bigquery" else _carregar_csv(uf)
+    print(f"\n📂 Carregando dados (source={source_label})...")
+    df = _carregar_bq(uf, strict_bigquery=strict_bigquery) if source == "bigquery" else _carregar_csv(uf)
 
     # score
     df["score_base"] = (
@@ -331,5 +358,6 @@ if __name__ == "__main__":
     parser = argparse.ArgumentParser()
     parser.add_argument("--uf",     default="PB")
     parser.add_argument("--source", default="csv", choices=["csv", "bigquery"])
+    parser.add_argument("--strict-bigquery", action="store_true")
     args = parser.parse_args()
-    run(uf=args.uf, source=args.source)
+    run(uf=args.uf, source=args.source, strict_bigquery=args.strict_bigquery)
