@@ -1,7 +1,3 @@
-# SolveLicita
-
----
-
 <p align="center">
   <img src="docs/assets/icons/solvelicita_github_header.svg" alt="SolveLicita — Score de Solvência Municipal" width="100%">
 </p>
