@@ -327,6 +327,46 @@ def _append_dataframe(
     client.load_table_from_dataframe(df, table_ref, job_config=job_config).result()
 
 
+def _replace_daily_snapshot(
+    client: bigquery.Client,
+    project: str,
+    *,
+    uf: str,
+    snapshot_date: date,
+    df_snapshot: pd.DataFrame,
+) -> None:
+    temp_table = f"{project}.snapshots._tmp_municipios_risco_snapshot_{uuid4().hex[:8]}"
+    target_table = f"{project}.snapshots.municipios_risco_snapshot"
+    columns_csv = ", ".join(SNAPSHOT_COLUMNS)
+
+    load_job_config = bigquery.LoadJobConfig(
+        write_disposition=bigquery.WriteDisposition.WRITE_TRUNCATE
+    )
+    client.load_table_from_dataframe(df_snapshot, temp_table, job_config=load_job_config).result()
+
+    try:
+        query = f"""
+        BEGIN TRANSACTION;
+        DELETE FROM `{target_table}`
+        WHERE uf = @uf
+          AND snapshot_date = @snapshot_date;
+
+        INSERT INTO `{target_table}` ({columns_csv})
+        SELECT {columns_csv}
+        FROM `{temp_table}`;
+        COMMIT TRANSACTION;
+        """
+        job_config = bigquery.QueryJobConfig(
+            query_parameters=[
+                bigquery.ScalarQueryParameter("uf", "STRING", uf.upper()),
+                bigquery.ScalarQueryParameter("snapshot_date", "DATE", snapshot_date.isoformat()),
+            ]
+        )
+        client.query(query, job_config=job_config).result()
+    finally:
+        client.delete_table(temp_table, not_found_ok=True)
+
+
 def publish_snapshot(
     df: pd.DataFrame,
     *,
@@ -375,10 +415,12 @@ def publish_snapshot(
     client = get_bigquery_client()
     project = get_bigquery_project()
     _append_dataframe(client, f"{project}.snapshots.snapshot_runs", df_run)
-    _append_dataframe(
+    _replace_daily_snapshot(
         client,
-        f"{project}.snapshots.municipios_risco_snapshot",
-        df_snapshot,
+        project,
+        uf=uf,
+        snapshot_date=snapshot_date,
+        df_snapshot=df_snapshot,
     )
 
     logger.info(
