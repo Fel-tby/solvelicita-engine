@@ -98,7 +98,7 @@ export default function DocsPage() {
             <div id="doc-formula" className={`doc-page ${docId === 'formula' ? 'active' : ''}`}>
               <div className="doc-h1">Fórmula e pesos</div>
               <div className="doc-meta">Versão 7.0</div>
-              <div className="doc-code">S = 35·f(Lliq) + 10·(1 − Ccauc) + 15·g(Eorcam)<br /> + 15·Qsiconfi + 10·h(Autonomia) + 15·i(RPproc)</div>
+              <div className="doc-code doc-formula">S = 35·f(Lliq) + 10·(1 − Ccauc)<br />+ 15·g(Eorcam) + 15·Qsiconfi + 10·h(Autonomia) + 15·i(RPproc)</div>
               <p className="doc-p">O score é expresso em pontos (0–100). Cada componente é normalizado para [0, 1] antes de ser multiplicado pelo peso.</p>
               <div className="doc-h2">Classificação</div>
               <table className="doc-table">
@@ -116,7 +116,7 @@ export default function DocsPage() {
             <div id="doc-lliq" className={`doc-page ${docId === 'lliq' ? 'active' : ''}`}>
               <div className="doc-h1">Liquidez Líquida (Lliq)</div>
               <div className="doc-meta">Peso 35% · Fonte: RGF Anexo 05</div>
-              <div className="doc-code">Lliq = (DCL_total_pós_RP − DCL_RPPS_pós_RP) / Receita_Realizada</div>
+              <div className="doc-code doc-formula">Lliq = (DCL_total_pós_RP − DCL_RPPS_pós_RP) / Receita_Realizada</div>
               <p className="doc-p">Extraído do RGF Anexo 05 (Demonstrativo da Disponibilidade de Caixa) do período mais recente entregue pelo município. O componente RPPS é subtraído por ter caixa vinculado de uso restrito, incluí-lo distorceria a liquidez real.</p>
               <div className="doc-h2">Curva de pontuação</div>
               <table className="doc-table">
@@ -141,7 +141,7 @@ export default function DocsPage() {
               <div className="doc-h2">Qualidade SICONFI (Qsiconfi) — 15%</div>
               <p className="doc-p">Proporção de anos (2020–2025) em que o município entregou o RREO ao Tesouro. Dado ausente não é sinal neutro, equivale a rebaixamento automático.</p>
               <div className="doc-h2">RP Crônicos (RPproc) — 15%</div>
-              <p className="doc-p">Contagem de anos em que rproc_pct &gt; 3%. Municípios com 5 ou mais anos crônicos têm classificação máxima travada em Risco Médio.</p>
+              <p className="doc-p">Contagem de anos em que rproc_pct &gt; 3%. Municípios com 4 ou mais anos crônicos têm classificação máxima travada em Risco Médio.</p>
               <div className="doc-h2">Autonomia Tributária — 10%</div>
               <p className="doc-p">Receita própria (IPTU, ISS, ITBI, taxas) como proporção da receita corrente. Municípios com autonomia abaixo de 8% da RCL recebem flag autonomia_critica, dependência total do FPM, que oscila 20–30% entre meses.</p>
               <div className="doc-h2">Bloqueio Federal (Ccauc) — 10%</div>
@@ -162,7 +162,7 @@ export default function DocsPage() {
                 </tbody>
               </table>
               <div className="doc-h2">Cap de Cronicidade</div>
-              <p className="doc-p">Municípios com n_anos_cronicos ≥ 5 têm classificação máxima travada em Risco Médio, independente do score numérico.</p>
+              <p className="doc-p">Municípios com n_anos_cronicos ≥ 4 têm classificação máxima travada em Risco Médio, independente do score numérico.</p>
             </div>
 
             <div id="doc-ausentes" className={`doc-page ${docId === 'ausentes' ? 'active' : ''}`}>
@@ -183,62 +183,101 @@ export default function DocsPage() {
 
             <div id="doc-val" className={`doc-page ${docId === 'val' ? 'active' : ''}`}>
               <div className="doc-h1">Validação Retroativa</div>
-              <div className="doc-meta">Walk-forward · 2020–2025 · <a href={siteConfig.repoUrl}>VALIDACAO.md no GitHub</a></div>
-              <p className="doc-p">O score é calculado com dados de T0 e o desfecho observado é rproc_pct em T1. Réplica da situação real de uso: previsão de comportamento futuro a partir de informação presente, sem acesso a dados do período avaliado.</p>
+              <div className="doc-meta">Walk-forward · base oficial 2021–2025 · <a href={siteConfig.repoUrl}>VALIDACAO.md no GitHub</a></div>
+              <p className="doc-p">A validação compara o score calculado em um ano com o comportamento fiscal observado no ano seguinte. Esse desenho reproduz o uso real do modelo: ordenar risco futuro sem acesso a informações do período que ainda não aconteceu.</p>
+              <div className="doc-callout"><strong>Nota metodológica:</strong> nesta validação, os componentes de bloqueio federal e autonomia tributária foram mantidos fixos por falta de série histórica comparável em toda a base. Por isso, o desempenho observado reflete principalmente o sinal de Liquidez Líquida, Execução Orçamentária, qualidade de entrega ao SICONFI e, no modelo operacional, também do histórico de atrasos recorrentes.</div>
               <div className="metric-row">
-                <div className="metric-card"><div className="metric-n">881</div><div className="metric-l">pares walk-forward</div></div>
-                <div className="metric-card"><div className="metric-n">342</div><div className="metric-l">era completa (com lliq)</div></div>
-                <div className="metric-card"><div className="metric-n">539</div><div className="metric-l">era parcial (sem lliq)</div></div>
+                <div className="metric-card"><div className="metric-n">4.671</div><div className="metric-l">pares válidos com score pleno</div></div>
+                <div className="metric-card"><div className="metric-n">905</div><div className="metric-l">eventos crônicos na base principal</div></div>
+                <div className="metric-card"><div className="metric-n">1.431</div><div className="metric-l">municípios em 9 UFs do Nordeste</div></div>
               </div>
-              <div className="doc-h2">Correlação de Spearman</div>
+              <div className="doc-h2">Modelo operacional</div>
               <table className="doc-table">
-                <thead><tr><th>Par</th><th>n</th><th>r</th><th>p</th></tr></thead>
+                <thead><tr><th>Métrica</th><th>Valor</th></tr></thead>
                 <tbody>
-                  <tr><td>2020 → 2021</td><td>172</td><td>−0,091</td><td>0,233 n.s. ⚠ COVID</td></tr>
-                  <tr><td>2021 → 2022</td><td>183</td><td>−0,302</td><td>&lt; 0,001 ***</td></tr>
-                  <tr><td>2022 → 2023</td><td>182</td><td>−0,362</td><td>&lt; 0,001 ***</td></tr>
-                  <tr><td>2023 → 2024</td><td>166</td><td>−0,363</td><td>&lt; 0,001 ***</td></tr>
-                  <tr><td>2024 → 2025</td><td>178</td><td>−0,337</td><td>&lt; 0,001 ***</td></tr>
+                  <tr><td>Pares válidos</td><td>4.671</td></tr>
+                  <tr><td>Eventos crônicos</td><td>905 (19,4%)</td></tr>
+                  <tr><td>Spearman</td><td>−0,3827</td></tr>
+                  <tr><td>AUC-ROC</td><td>0,7443</td></tr>
                 </tbody>
               </table>
-              <div className="doc-h2">AUC-ROC (desfecho: rproc_T1 &gt; 3%)</div>
+              <div className="doc-h2">Gradiente de risco</div>
+              <table className="doc-table">
+                <thead><tr><th>Classe no ano-base</th><th>n</th><th>Mediana de atrasos no ano seguinte</th><th>% de casos crônicos no ano seguinte</th></tr></thead>
+                <tbody>
+                  <tr><td><span className="badge b-baixo">Risco Baixo</span></td><td>783</td><td>0,35%</td><td>9,2%</td></tr>
+                  <tr><td><span className="badge b-medio">Risco Médio</span></td><td>3.267</td><td>0,71%</td><td>15,6%</td></tr>
+                  <tr><td><span className="badge b-alto">Risco Alto</span></td><td>617</td><td>3,07%</td><td>51,9%</td></tr>
+                  <tr><td><span className="badge b-critico">Crítico</span></td><td>4</td><td>9,64%</td><td>50,0%</td></tr>
+                </tbody>
+              </table>
               <div className="metric-row">
-                <div className="metric-card"><div className="metric-n" style={{ color: 'var(--accent)' }}>0,750</div><div className="metric-l">era completa</div></div>
-                <div className="metric-card"><div className="metric-n">0,643</div><div className="metric-l">era parcial</div></div>
-                <div className="metric-card"><div className="metric-n" style={{ color: 'var(--green)' }}>5,7×</div><div className="metric-l">Alto vs Baixo</div></div>
+                <div className="metric-card"><div className="metric-n" style={{ color: 'var(--accent)' }}>0,7443</div><div className="metric-l">AUC-ROC do modelo operacional</div></div>
+                <div className="metric-card"><div className="metric-n">−0,3827</div><div className="metric-l">Spearman entre score atual e atraso no ano seguinte</div></div>
+                <div className="metric-card"><div className="metric-n" style={{ color: 'var(--green)' }}>5,6×</div><div className="metric-l">Alto vs Baixo em cronicidade futura</div></div>
               </div>
-              <div className="doc-callout">Municípios classificados como Risco Alto têm <strong>5,7× mais probabilidade</strong> de se tornarem crônicos no ano seguinte do que os de Risco Baixo. O gradiente é monótono e sem inversões.</div>
+              <div className="doc-callout">O gradiente do modelo operacional é monotônico e sem inversões relevantes. Municípios classificados como <strong>Risco Alto têm 5,6× mais probabilidade</strong> de se tornarem crônicos no ano seguinte do que os de Risco Baixo.</div>
             </div>
 
             <div id="doc-sens" className={`doc-page ${docId === 'sens' ? 'active' : ''}`}>
               <div className="doc-h1">Análise de Sensibilidade</div>
-              <div className="doc-h2">1. Exclusão de 2020 como T0</div>
-              <p className="doc-p">O par 2020→2021 quebra a sequência (r=−0,091 n.s.). A causa são os repasses emergenciais da LC 173/2020 (COVID), que inflaram os indicadores de municípios com perfil fiscal deteriorado.</p>
+              <div className="doc-h2">Teste sem o componente de atrasos recorrentes</div>
+              <p className="doc-p">Também rodamos uma versão mais conservadora do modelo sem o componente que mede o histórico de atrasos recorrentes. O objetivo é verificar quanto da capacidade preditiva permanece quando o score depende apenas dos demais sinais fiscais disponíveis na base histórica.</p>
               <table className="doc-table">
-                <thead><tr><th>Era</th><th>AUC (com 2020)</th><th>AUC (sem 2020)</th><th>Delta</th></tr></thead>
+                <thead><tr><th>Métrica</th><th>Valor</th></tr></thead>
                 <tbody>
-                  <tr><td>Era Parcial</td><td>0,643</td><td>0,706</td><td style={{ color: 'var(--green)' }}>+0,063</td></tr>
-                  <tr><td>Era Completa</td><td>0,750</td><td>0,750</td><td>0,000</td></tr>
+                  <tr><td>Pares válidos</td><td>4.671</td></tr>
+                  <tr><td>Eventos crônicos</td><td>905 (19,4%)</td></tr>
+                  <tr><td>Spearman</td><td>−0,2632</td></tr>
+                  <tr><td>AUC-ROC</td><td>0,6621</td></tr>
                 </tbody>
               </table>
-              <div className="doc-h2">2. Remoção de RPproc (circularidade)</div>
+              <div className="doc-h2">Gradiente de risco no teste conservador</div>
               <table className="doc-table">
-                <thead><tr><th>Era</th><th>AUC com RPproc</th><th>AUC sem RPproc</th><th>Delta</th></tr></thead>
+                <thead><tr><th>Classe no ano-base</th><th>n</th><th>Mediana de atrasos no ano seguinte</th><th>% de casos crônicos no ano seguinte</th></tr></thead>
                 <tbody>
-                  <tr><td>Era Parcial</td><td>0,643</td><td>0,547</td><td style={{ color: 'var(--red)' }}>−0,096</td></tr>
-                  <tr><td>Era Completa</td><td>0,750</td><td>0,642</td><td style={{ color: 'var(--red)' }}>−0,108</td></tr>
+                  <tr><td><span className="badge b-baixo">Risco Baixo</span></td><td>568</td><td>0,45%</td><td>13,2%</td></tr>
+                  <tr><td><span className="badge b-medio">Risco Médio</span></td><td>3.307</td><td>0,68%</td><td>16,4%</td></tr>
+                  <tr><td><span className="badge b-alto">Risco Alto</span></td><td>777</td><td>1,68%</td><td>35,8%</td></tr>
+                  <tr><td><span className="badge b-critico">Crítico</span></td><td>19</td><td>2,25%</td><td>42,1%</td></tr>
                 </tbody>
               </table>
-              <p className="doc-p">O AUC sem RPproc na era completa (0,642) ainda discrimina moderadamente, o sinal de lliq, eorcam e qsiconfi é real e independente.</p>
+              <p className="doc-p">Sem esse componente, o modelo perde parte do poder discriminatório, mas continua acima do acaso. O AUC cai de 0,7443 para 0,6621 e o gradiente permanece visível: municípios classificados como Risco Alto ficam com probabilidade 2,7× maior de atraso crônico futuro do que os de Risco Baixo.</p>
+              <div className="doc-callout">A leitura conjunta é estável: o histórico de atrasos recorrentes carrega sinal importante, mas o modelo não depende exclusivamente dele para ordenar risco. Em leitura conservadora, o poder discriminatório do score fica entre <strong>0,6621 e 0,7443</strong>.</div>
             </div>
 
             <div id="doc-erros" className={`doc-page ${docId === 'erros' ? 'active' : ''}`}>
-              <div className="doc-h1">Erros Extremos — Era Completa</div>
-              <div className="doc-h2">Falsos positivos (classificados como Alto/Crítico, rproc T1 &lt; 1%)</div>
-              <p className="doc-p">Todos os casos têm score entre 55–60, fronteira exata da classe Alto. Nenhum no núcleo da classificação. Concentração na fronteira é esperada estatisticamente.</p>
-              <div className="doc-h2">Falsos negativos (classificados como Baixo/Médio, rproc T1 &gt; 5%)</div>
-              <p className="doc-p">Padrão dominante: liquidez positiva em T0 seguida de deterioração abrupta de RP em T1. Choque que nenhum modelo anual consegue antecipar sem dados infraanuais.</p>
-              <div className="doc-callout">Mitigação recomendada: monitoramento trimestral de rproc_pct para municípios com score entre 70–90 e n_anos_cronicos ≥ 1.</div>
+              <div className="doc-h1">Erros Extremos — Modelo Operacional</div>
+              <div className="doc-h2">Falsos positivos (classificados como Alto/Crítico, com atraso inferior a 1% no ano seguinte)</div>
+              <table className="doc-table">
+                <thead><tr><th>Município</th><th>UF</th><th>Score no ano-base</th><th>Atraso no ano seguinte</th></tr></thead>
+                <tbody>
+                  <tr><td>Vertentes</td><td>PE</td><td>59.9</td><td>0,50%</td></tr>
+                  <tr><td>Cajazeiras</td><td>PB</td><td>59.9</td><td>0,26%</td></tr>
+                  <tr><td>Ceará-Mirim</td><td>RN</td><td>59.9</td><td>0,58%</td></tr>
+                  <tr><td>Santana do Seridó</td><td>RN</td><td>59.8</td><td>0,76%</td></tr>
+                  <tr><td>Aracoiaba</td><td>CE</td><td>59.8</td><td>-1,98%</td></tr>
+                  <tr><td>Jatobá</td><td>PE</td><td>59.8</td><td>0,18%</td></tr>
+                  <tr><td>Santa Rita</td><td>PB</td><td>59.7</td><td>0,18%</td></tr>
+                  <tr><td>Serrinha</td><td>BA</td><td>59.7</td><td>0,29%</td></tr>
+                </tbody>
+              </table>
+              <p className="doc-p">Os falsos positivos seguem concentrados na fronteira da classe Alto, todos em torno de 60 pontos. Isso é compatível com erro de classificação próximo ao limiar, não com falha estrutural no núcleo do ranking.</p>
+              <div className="doc-h2">Falsos negativos (classificados como Baixo/Médio, com atraso acima de 5% no ano seguinte)</div>
+              <table className="doc-table">
+                <thead><tr><th>Município</th><th>UF</th><th>Score no ano-base</th><th>Atraso no ano seguinte</th></tr></thead>
+                <tbody>
+                  <tr><td>Tupanatinga</td><td>PE</td><td>72.2</td><td>22,12%</td></tr>
+                  <tr><td>Santana do Cariri</td><td>CE</td><td>83.8</td><td>20,43%</td></tr>
+                  <tr><td>Iguatu</td><td>CE</td><td>68.1</td><td>20,36%</td></tr>
+                  <tr><td>Lucena</td><td>PB</td><td>65.4</td><td>20,02%</td></tr>
+                  <tr><td>Ibirajuba</td><td>PE</td><td>60.5</td><td>19,78%</td></tr>
+                  <tr><td>Barra do Mendes</td><td>BA</td><td>69.6</td><td>18,57%</td></tr>
+                  <tr><td>Manoel Vitorino</td><td>BA</td><td>75.3</td><td>18,47%</td></tr>
+                  <tr><td>Bom Conselho</td><td>PE</td><td>61.5</td><td>18,35%</td></tr>
+                </tbody>
+              </table>
+              <p className="doc-p">O padrão dominante nos falsos negativos graves continua sendo deterioração abrupta dos atrasos no ano seguinte, após um ano-base ainda relativamente saudável. Esse é o tipo de choque anual que o modelo consegue ordenar apenas parcialmente sem sinais infraanuais.</p>
             </div>
 
             <div id="doc-glossario" className={`doc-page ${docId === 'glossario' ? 'active' : ''}`}>
@@ -278,7 +317,7 @@ export default function DocsPage() {
 
             <div id="doc-citar" className={`doc-page ${docId === 'citar' ? 'active' : ''}`}>
               <div className="doc-h1">Como citar</div>
-              <div className="doc-code">
+              <div className="doc-code doc-cite">
                 {`> ${siteConfig.brandName}. Score de Solvência Municipal. ${siteConfig.foundedYear}.`}
                 <br />
                 {`> Disponível em: ${siteConfig.siteUrl}`}

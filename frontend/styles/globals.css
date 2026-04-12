@@ -471,7 +471,29 @@ nav {
 .doc-p a { color: var(--accent); text-decoration: none; }
 .doc-callout { background: var(--accent-bg); border: 1px solid #c5d0fa; border-radius: 8px; padding: 0.875rem 1rem; margin: 1rem 0; font-size: 0.83rem; color: #364fc7; line-height: 1.7; }
 .doc-callout strong { color: #1c3faa; }
-.doc-code { background: #f6f8fa; border: 1px solid var(--border); border-radius: 6px; padding: 0.875rem 1rem; font-family: var(--mono); font-size: 0.78rem; color: #24292e; line-height: 1.65; margin: 1rem 0; overflow-x: auto; }
+.doc-code {
+  background: #f6f8fa;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  padding: 0.875rem 1rem;
+  margin: 1rem 0;
+  overflow-x: auto;
+}
+.doc-formula {
+  font-family: var(--mono);
+  font-size: 0.76rem;
+  font-weight: 400;
+  color: var(--text-mid);
+  line-height: 1.7;
+}
+.doc-cite {
+  font-family: var(--sans);
+  font-size: 0.82rem;
+  font-weight: 400;
+  color: var(--text);
+  line-height: 1.7;
+  letter-spacing: -0.01em;
+}
 .doc-table { width: 100%; border-collapse: collapse; margin: 0.75rem 0 1.5rem; font-size: 0.82rem; }
 
 /* ── LEGAL ── */

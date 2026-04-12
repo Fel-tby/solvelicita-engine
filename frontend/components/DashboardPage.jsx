@@ -1267,7 +1267,7 @@ export default function DashboardPage({ uf }) {
                         transition: 'background 0.1s',
                       }}
                     >
-                      <td style={{ padding: '10px 10px', color: 'var(--text-lo)', fontFamily: 'var(--mono)', fontVariantNumeric: 'tabular-nums lining-nums' }}>
+                      <td style={{ padding: '10px 10px', color: 'var(--text-lo)', fontFamily: 'var(--sans)', fontVariantNumeric: 'tabular-nums lining-nums' }}>
                         {index + 1}
                       </td>
                       <td style={{ padding: '10px 10px', color: 'var(--text-hi)', fontWeight: 600, whiteSpace: 'nowrap', fontFamily: 'var(--sans)' }}>
@@ -1276,7 +1276,7 @@ export default function DashboardPage({ uf }) {
                       <td
                         style={{
                           padding: '10px 10px',
-                          fontFamily: 'var(--mono)',
+                          fontFamily: 'var(--sans)',
                           color: corPorScore(municipio.score),
                           fontWeight: 700,
                           fontVariantNumeric: 'tabular-nums lining-nums',
@@ -1287,29 +1287,29 @@ export default function DashboardPage({ uf }) {
                       <td style={{ padding: '10px 10px' }}>
                         <BadgeRisco classe={municipio.classificacao} />
                       </td>
-                      <td style={{ padding: '10px 10px', color: 'var(--text-mid)', fontFamily: 'var(--mono)', fontVariantNumeric: 'tabular-nums lining-nums' }}>
+                      <td style={{ padding: '10px 10px', color: 'var(--text-mid)', fontFamily: 'var(--sans)', fontVariantNumeric: 'tabular-nums lining-nums' }}>
                         {municipio.populacao?.toLocaleString('pt-BR') || '-'}
                       </td>
-                      <td style={{ padding: '10px 10px', color: 'var(--text-mid)', fontFamily: 'var(--mono)', fontVariantNumeric: 'tabular-nums lining-nums' }}>
+                      <td style={{ padding: '10px 10px', color: 'var(--text-mid)', fontFamily: 'var(--sans)', fontVariantNumeric: 'tabular-nums lining-nums' }}>
                         {fmtPct(municipio.eorcam_raw)}
                       </td>
                       <td
                         style={{
                           padding: '10px 10px',
-                          fontFamily: 'var(--mono)',
+                          fontFamily: 'var(--sans)',
                           color: Number(municipio.rproc_pct_atual) > 3 ? '#ef4444' : 'var(--text-mid)',
                           fontVariantNumeric: 'tabular-nums lining-nums',
                         }}
                       >
                         {fmtPct(municipio.rproc_pct_atual)}
                       </td>
-                      <td style={{ padding: '10px 10px', color: 'var(--text-mid)', fontFamily: 'var(--mono)', fontVariantNumeric: 'tabular-nums lining-nums' }}>
+                      <td style={{ padding: '10px 10px', color: 'var(--text-mid)', fontFamily: 'var(--sans)', fontVariantNumeric: 'tabular-nums lining-nums' }}>
                         {municipio.qsiconfi != null ? fmtPct(Number(municipio.qsiconfi) * 100, 0) : '-'}
                       </td>
                       <td
                         style={{
                           padding: '10px 10px',
-                          fontFamily: 'var(--mono)',
+                          fontFamily: 'var(--sans)',
                           color: Number(municipio.ccauc) > 0 ? '#ef4444' : 'var(--text-mid)',
                           fontVariantNumeric: 'tabular-nums lining-nums',
                         }}
@@ -1319,7 +1319,7 @@ export default function DashboardPage({ uf }) {
                       <td
                         style={{
                           padding: '10px 10px',
-                          fontFamily: 'var(--mono)',
+                          fontFamily: 'var(--sans)',
                           color: Number(municipio.lliq_raw) < 0 ? '#ef4444' : 'var(--text-mid)',
                           fontVariantNumeric: 'tabular-nums lining-nums',
                         }}
@@ -1329,23 +1329,23 @@ export default function DashboardPage({ uf }) {
                       <td
                         style={{
                           padding: '10px 10px',
-                          fontFamily: 'var(--mono)',
+                          fontFamily: 'var(--sans)',
                           color: Number(municipio.autonomia_media) < 0.08 ? '#f59e0b' : 'var(--text-mid)',
                           fontVariantNumeric: 'tabular-nums lining-nums',
                         }}
                       >
                         {fmtNum(municipio.autonomia_media, 3)}
                       </td>
-                      <td style={{ padding: '10px 10px', color: 'var(--text-mid)', fontFamily: 'var(--mono)', fontVariantNumeric: 'tabular-nums lining-nums' }}>
+                      <td style={{ padding: '10px 10px', color: 'var(--text-mid)', fontFamily: 'var(--sans)', fontVariantNumeric: 'tabular-nums lining-nums' }}>
                         {municipio.n_licitacoes?.toLocaleString('pt-BR') || '-'}
                       </td>
-                      <td style={{ padding: '10px 10px', color: 'var(--text-mid)', fontFamily: 'var(--mono)', fontVariantNumeric: 'tabular-nums lining-nums' }}>
+                      <td style={{ padding: '10px 10px', color: 'var(--text-mid)', fontFamily: 'var(--sans)', fontVariantNumeric: 'tabular-nums lining-nums' }}>
                         {fmtBRL(municipio.valor_homologado_total)}
                       </td>
                       <td
                         style={{
                           padding: '10px 10px',
-                          fontFamily: 'var(--mono)',
+                          fontFamily: 'var(--sans)',
                           color: Number(municipio.pct_dispensa) > 0.3 ? '#ef4444' : 'var(--text-mid)',
                           fontVariantNumeric: 'tabular-nums lining-nums',
                         }}

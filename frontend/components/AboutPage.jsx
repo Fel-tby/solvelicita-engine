@@ -43,24 +43,26 @@ export default function AboutPage() {
 
       <div className="sobre-stats-new">
         <div className="stat-new">
-          <div className="stat-new-n">5,7×</div>
+          <div className="stat-new-n">5,6×</div>
           <div className="stat-new-label">
-            mais chance de um município Risco Alto acumular Restos a Pagar
-            crônicos do que um Risco Baixo. Validado retroativamente.
+            mais risco de uma prefeitura classificada como Risco Alto atrasar
+            pagamentos de forma crônica do que uma de Risco Baixo. Comprovado
+            com dados históricos.
           </div>
         </div>
         <div className="stat-new">
           <div className="stat-new-n">1 em 2</div>
           <div className="stat-new-label">
-            municípios classificados Risco Alto registrou acúmulo recorrente de pagamentos não quitados no ano
-            seguinte, contra 1 em 11 entre os de Risco Baixo
+            municípios classificados como Risco Alto acumularam contas atrasadas
+            no ano seguinte. Entre os de Risco Baixo, essa proporção cai para
+            apenas 1 em 11.
           </div>
         </div>
         <div className="stat-new">
           <div className="stat-new-n">5.570</div>
           <div className="stat-new-label">
-            municípios brasileiros, com metodologia e arquitetura de dados projetadas para cobertura
-            nacional e piloto cobrindo os 1.794 municípios do Nordeste
+            municípios brasileiros compõem a ambição de cobertura do projeto.
+            Nesta fase, o piloto está validado nas 1.794 cidades do Nordeste.
           </div>
         </div>
       </div>
@@ -68,11 +70,12 @@ export default function AboutPage() {
       <div className="sobre-body">
         <h2>O que é o SolveLicita</h2>
         <p>
-          O SolveLicita calcula um Score de Solvência (0 a 100) para cada
-          município brasileiro, cruzando dados fiscais públicos do Tesouro
+          O SolveLicita calcula um Score de Solvência (0 a 100), atualmente,
+          para cada município do Nordeste, cruzando dados fiscais públicos do Tesouro
           Nacional e do Governo Federal. Seis indicadores ponderados por
-          relevância, todos declarados pelos próprios municípios às autoridades
-          federais.
+          relevância, calculados a partir de bases oficiais federais, com dados
+          declarados pelos municípios e registros verificados pelo Governo
+          Federal.
         </p>
         <p>
           Não é um modelo de previsão pontual de inadimplência. É um indicador
@@ -81,14 +84,15 @@ export default function AboutPage() {
         </p>
         <h2>Para que serve</h2>
         <p>
-          Para quem precisa avaliar a capacidade fiscal de um município antes de
-          tomar uma decisão.
+          Serve para apoiar decisões que dependem da capacidade fiscal do
+          município. Ajuda a identificar sinais de fragilidade, comparar
+          prefeituras com critérios consistentes e reduzir assimetria de
+          informação antes de contratar, analisar ou monitorar um ente público.
         </p>
         <p>
-          Fornecedores avaliando o risco de contratar com uma prefeitura.
-          Pesquisadores comparando gestão fiscal entre municípios. Jornalistas
-          verificando saúde orçamentária. Gestores públicos acompanhando os
-          próprios indicadores antes que virem problema.
+          É útil para fornecedores, equipes comerciais, pesquisadores,
+          jornalistas e gestores públicos que precisam de uma referência técnica
+          e comparável sobre risco fiscal municipal.
         </p>
       </div>
     </>

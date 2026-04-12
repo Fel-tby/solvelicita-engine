@@ -115,18 +115,17 @@ export default function SobrePage() {
         <div className="val-banner-v2">
           <div className="val-banner-v2-inner">
             <p>
-              <strong>O score foi validado retroativamente</strong> em 881 pares
-              município×ano entre 2020 e 2025, sem acesso a dados futuros
-              durante o cálculo. O gradiente de risco é monótono: municípios
-              Risco Alto registraram Restos a Pagar crônicos em 50% dos casos no
-              ano seguinte, contra 8,8% entre os de Risco Baixo. A probabilidade
-              de acerto na separação entre crônicos e não-crônicos (AUC-ROC) foi
-              de 0,75.
+              <strong>O score foi testado com dados históricos</strong> em 4.671 avaliações
+              anuais de municípios entre 2021 e 2025, simulando cenários reais
+              sem acesso a informações do futuro. A classificação provou ser consistente: municípios
+              de Risco Alto registraram alto volume de contas atrasadas (Restos a Pagar) em 51,9% dos casos no
+              ano seguinte, contra apenas 9,2% entre os de Risco Baixo. A probabilidade
+              do modelo acertar ao separar os bons e os maus pagadores foi de 74,4%.
             </p>
             <div className="val-stats-v2">
-              <div><div className="val-stat-v2-n">881</div><div className="val-stat-v2-l">pares município×ano testados</div></div>
-              <div><div className="val-stat-v2-n">50%</div><div className="val-stat-v2-l">RP crônicos em municípios Risco Alto</div></div>
-              <div><div className="val-stat-v2-n">8,8%</div><div className="val-stat-v2-l">RP crônicos em municípios Risco Baixo</div></div>
+              <div><div className="val-stat-v2-n">4.671</div><div className="val-stat-v2-l">avaliações anuais testadas</div></div>
+              <div><div className="val-stat-v2-n">51,9%</div><div className="val-stat-v2-l">atrasos crônicos no Risco Alto</div></div>
+              <div><div className="val-stat-v2-n">9,2%</div><div className="val-stat-v2-l">atrasos crônicos no Risco Baixo</div></div>
             </div>
             <Link className="val-docs-link" href="/docs">
               Ver metodologia completa →
