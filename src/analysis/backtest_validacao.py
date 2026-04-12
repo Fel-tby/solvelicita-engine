@@ -322,7 +322,10 @@ def construir_pares(df, incluir_rproc=True, excluir_t0=None):
             qsiconfi_n = score_qsiconfi(anos_entregues, len(anos_janela))
 
             n_cronicos = int((
-                df_mun[(df_mun["ano"] < t0) & df_mun["rproc_pct"].notna()]["rproc_pct"] > 3.0
+                df_mun[
+                    (df_mun["ano"] < t0)
+                    & df_mun["rproc_pct"].notna()
+                ]["rproc_pct"] > 3.0
             ).sum())
             rproc_n = score_rproc(n_cronicos)
 

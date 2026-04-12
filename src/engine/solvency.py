@@ -1,5 +1,5 @@
 """
-engine/solvency.py — v7.1.0
+engine/solvency.py — v7.0
 source="csv"      → lê CSVs locais (legado, default durante transição)
 source="bigquery" → lê mart.mart_indicadores_municipios
 """
@@ -23,7 +23,7 @@ from scorers.autonomia_scorer import carregar_dca as calcular_autonomia, pontuar
 from scorers.rproc_scorer   import calcular as calcular_rproc, pontuar_rproc_cronico
 from engine.classifier      import classificar, ORDEM_SORT
 
-VERSION = "v7.1.0"
+VERSION = "v7.0"
 
 
 # Carga CSV (legado)

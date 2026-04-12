@@ -86,7 +86,7 @@ flowchart LR
 
     subgraph SCORE ["4. Scoring Engine"]
         direction LR
-        ENG["Engine de score v7.1.0"]
+        ENG["Engine de score v7.0"]
         CSV["CSV final"]
     end
 

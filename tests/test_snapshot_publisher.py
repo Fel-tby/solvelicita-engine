@@ -80,7 +80,7 @@ def test_publish_snapshot_appends_run_log_and_replaces_daily_snapshot(monkeypatc
     ok = publish_snapshot(
         _sample_df(),
         uf="PB",
-        methodology_version="v7.1.0",
+        methodology_version="v7.0",
         run_type="pipeline",
         pipeline_mode="incremental",
         source_mode="bigquery",

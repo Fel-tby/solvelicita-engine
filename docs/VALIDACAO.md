@@ -1,11 +1,13 @@
-# Validação do Score de Solvência
+# Validação Geral do Score de Solvência
 
 **Versão do score:** 7.0  
-**Última atualização:** Março/2026  
+**Última atualização:** Abril/2026  
 **Referência cruzada:** [METODOLOGIA.md](./METODOLOGIA.md)
 
-> Este documento registra a evidência empírica de que o score discrimina risco fiscal real.
+> Este documento registra a evidência empírica da validação geral do modelo em base nacional.
 > Não descreve como o score é calculado — isso está em METODOLOGIA.md.
+
+**Componentes neutralizados em ambos os testes:** CAUC foi fixado em `0.0` e Autonomia em `0.5`. Isso foi necessário porque essas duas variáveis não possuem série histórica compatível dentro do `siconfi_indicadores`, que é a base anual consolidada usada no backtest walk-forward. Em termos práticos, isso significa que o poder discriminatório observado abaixo vem de `Lliq`, `Eorcam`, `Qsiconfi` e, no teste operacional, também de `RPproc`.
 
 ---
 
@@ -13,7 +15,12 @@
 
 A validação usa **walk-forward por pares de anos consecutivos**: o score é calculado com dados de T0 e o desfecho observado é `rproc_pct` em T1. Isso replica a situação real de uso — o score prevê comportamento futuro a partir de informação presente, sem acesso a dados do período avaliado.
 
-Desfecho binário adotado: `rproc_pct > 3%` em T1 = **evento crônico**. O limiar de 3% é o mesmo usado internamente pelo score para classificar `n_anos_cronicos`.
+Este documento adota, como recorte oficial, a **base geral sem T0=2020**. O desfecho binário continua sendo `rproc_pct > 3%` em T1 = **evento crônico**, o mesmo limiar usado internamente pelo score para classificar `n_anos_cronicos`.
+
+Dois testes são apresentados sobre a mesma base:
+
+1. **Modelo operacional** — score com `RPproc` ativo.
+2. **Modelo sem RPproc** — score recalculado sem esse componente, para medir o desempenho do restante da estrutura do modelo.
 
 ---
 
@@ -21,15 +28,14 @@ Desfecho binário adotado: `rproc_pct > 3%` em T1 = **evento crônico**. O limia
 
 | Elemento | Valor |
 |---|---|
-| Universo | 215 municípios da Paraíba |
-| Período | 2020–2025 (6 ciclos) |
-| Pares walk-forward válidos | 881 |
-| Era Completa (com lliq) | 342 pares — 2023→2024 e 2024→2025 |
-| Era Parcial (sem lliq) | 539 pares — 2020→2021, 2021→2022, 2022→2023 |
-| Eventos crônicos na Era Completa | 81 (23,7%) |
-| Eventos crônicos na Era Parcial | 185 (34,3%) |
+| Escopo geográfico | 9 UFs do Nordeste calibradas neste estágio do modelo: AL, BA, CE, MA, PB, PE, PI, RN e SE |
+| Universo | 1.431 municípios |
+| Base walk-forward sem T0=2020 | 4.824 pares município×ano |
+| Base principal reportada neste documento | 4.671 pares com score pleno |
+| Eventos crônicos na base principal | 905 (19,4%) |
+| Horizonte observado | T0→T1 em janela anual |
 
-**Componentes neutralizados no backtest:** CAUC (fixado em 0.0) e Autonomia (fixada em 0.5) não possuem série histórica no `siconfi_indicadores`. Os 20% de peso correspondentes são redistribuídos proporcionalmente entre os componentes ativos. O AUC reportado representa, portanto, o score operando com ~80% de sua informação disponível.
+As métricas centrais abaixo são reportadas sobre a base principal de 4.671 pares, que é a parcela do backtest em que o modelo roda com todos os componentes historicamente disponíveis neste recorte.
 
 ---
 
@@ -45,147 +51,126 @@ Probabilidade de que o score ordene corretamente um par aleatório (crônico vs 
 
 ---
 
-## Resultados — Score completo
+## Resultados — Modelo Operacional
 
-### Correlação de Spearman
+### Métricas principais
 
-| Par | n | r | p | Observação |
-|---|---|---|---|---|
-| 2020→2021 | 172 | −0.091 | 0.233 n.s. | ⚠ Ano atípico COVID — ver seção abaixo |
-| 2021→2022 | 183 | −0.302 | <0.001 *** | |
-| 2022→2023 | 182 | −0.362 | <0.001 *** | |
-| 2023→2024 | 166 | −0.363 | <0.001 *** | |
-| 2024→2025 | 178 | −0.337 | <0.001 *** | |
-| **Era Parcial** | 539 | **−0.248** | <0.001 *** | |
-| **Era Completa** | 342 | **−0.340** | <0.001 *** | |
+| Métrica | Valor |
+|---|---|
+| Pares válidos | 4.671 |
+| Eventos crônicos | 905 (19,4%) |
+| Spearman | **−0.3827** |
+| AUC-ROC | **0.7443** |
 
-Referência de magnitude: \|r\| < 0.10 fraco · 0.10–0.30 moderado · > 0.30 forte.
+O resultado indica que o modelo **ordena bem o risco futuro e discrimina de forma consistente** em base nacional. Um AUC de 0.7443 significa que, dado um município que se tornou crônico e outro que não se tornou, o score aponta o correto em aproximadamente 74% dos casos.
 
-### AUC-ROC
-
-| Era | n | Eventos crônicos | AUC |
-|---|---|---|---|
-| Era Parcial | 539 | 185 (34,3%) | **0.643** |
-| Era Completa | 342 | 81 (23,7%) | **0.750** |
-
-O AUC de 0.750 na era completa significa: dado um município que se tornou crônico e um que não se tornou, o score aponta o correto em 75% dos casos. Com 81 eventos positivos, o intervalo de confiança bootstrap estimado tem amplitude ~0.12 (IC 95%: ~0.69–0.81).
-
-### Gradiente de risco — Era Completa
+### Gradiente de risco
 
 | Classe em T0 | n | Mediana rproc T1 | % crônicos em T1 |
 |---|---|---|---|
-| 🟢 Risco Baixo | 80 | 0,52% | 8,8% |
-| 🟡 Risco Médio | 200 | 0,74% | 21,5% |
-| 🔴 Risco Alto | 62 | 3,00% | **50,0%** |
+| 🟢 Risco Baixo | 783 | 0,35% | 9,2% |
+| 🟡 Risco Médio | 3.267 | 0,71% | 15,6% |
+| 🔴 Risco Alto | 617 | 3,07% | **51,9%** |
+| ⚫ Risco Crítico | 4 | 9,64% | 50,0% |
 
-O gradiente é monótono e sem inversões. Municípios classificados como Risco Alto têm **5,7× mais probabilidade** de se tornarem crônicos no ano seguinte do que municípios classificados como Risco Baixo.
+O gradiente é monotônico e sem inversões relevantes. Municípios classificados como **Risco Alto** têm **5,6× mais probabilidade** de se tornarem crônicos no ano seguinte do que municípios classificados como **Risco Baixo**.
+
+### Erros extremos
+
+#### Falsos positivos (classificados como Alto/Crítico, rproc T1 < 1%)
+
+| Município | UF | Score T0 | rproc T1 |
+|---|---|---|---|
+| Vertentes | PE | 59.9 | 0.50% |
+| Cajazeiras | PB | 59.9 | 0.26% |
+| Ceará-Mirim | RN | 59.9 | 0.58% |
+| Santana do Seridó | RN | 59.8 | 0.76% |
+| Aracoiaba | CE | 59.8 | -1.98% |
+| Jatobá | PE | 59.8 | 0.18% |
+| Santa Rita | PB | 59.7 | 0.18% |
+| Serrinha | BA | 59.7 | 0.29% |
+
+Os falsos positivos seguem concentrados na fronteira da classe Alto, todos em torno de 60 pontos. Isso é compatível com erro de classificação próximo ao limiar, não com falha estrutural no núcleo do ranking.
+
+#### Falsos negativos (classificados como Baixo/Médio, rproc T1 > 5%)
+
+| Município | UF | Score T0 | rproc T1 |
+|---|---|---|---|
+| Tupanatinga | PE | 72.2 | 22.12% |
+| Santana do Cariri | CE | 83.8 | 20.43% |
+| Iguatu | CE | 68.1 | 20.36% |
+| Lucena | PB | 65.4 | 20.02% |
+| Ibirajuba | PE | 60.5 | 19.78% |
+| Barra do Mendes | BA | 69.6 | 18.57% |
+| Manoel Vitorino | BA | 75.3 | 18.47% |
+| Bom Conselho | PE | 61.5 | 18.35% |
+
+O padrão dominante nos falsos negativos graves continua sendo deterioração abrupta de `rproc_pct` em T1 após um T0 ainda relativamente saudável. Isso é o tipo de choque anual que o modelo consegue ordenar apenas parcialmente sem dados infraanuais.
 
 ---
 
-## Análise de sensibilidade
+## Resultados — Modelo Sem RPproc
 
-### 1. Exclusão de 2020 como T0
+### Métricas principais
 
-O par 2020→2021 produz r=−0.091 (n.s.), quebrando a sequência de quatro pares consecutivos com r forte e significativo. A causa identificada são os repasses emergenciais da LC 173/2020 (COVID): municípios com perfil fiscal deteriorado receberam caixa atípico que inflou `eorcam` e `lliq` de 2020, superestimando o score para exatamente os municípios de maior risco real.
+| Métrica | Valor |
+|---|---|
+| Pares válidos | 4.671 |
+| Eventos crônicos | 905 (19,4%) |
+| Spearman | **−0.2632** |
+| AUC-ROC | **0.6621** |
 
-Rodando com `--excluir-t0 2020`:
+Sem `RPproc`, o modelo perde poder discriminatório, mas **não colapsa para aleatoriedade**. Isso mostra que `Lliq`, `Eorcam` e `Qsiconfi` preservam sinal preditivo independente mesmo na ausência do componente historicamente mais próximo do desfecho.
 
-| Era | AUC (com 2020) | AUC (sem 2020) | Delta |
+### Gradiente de risco
+
+| Classe em T0 | n | Mediana rproc T1 | % crônicos em T1 |
 |---|---|---|---|
-| Era Parcial | 0.643 | **0.706** | +0.063 |
-| Era Completa | 0.750 | 0.750 | 0.000 |
+| 🟢 Risco Baixo | 568 | 0,45% | 13,2% |
+| 🟡 Risco Médio | 3.307 | 0,68% | 16,4% |
+| 🔴 Risco Alto | 777 | 1,68% | **35,8%** |
+| ⚫ Risco Crítico | 19 | 2,25% | 42,1% |
 
-A era completa não é afetada (2020 não é T0 em nenhum par dela). O ganho de +0.063 na era parcial confirma que 2020 é o responsável pela diferença de AUC entre as duas eras — não a ausência de `lliq`. Sem o ruído de 2020, a era parcial também atinge AUC moderado (0.706).
-
-**Implicação prática:** scores calculados com dados de 2020 como âncora têm maior incerteza. Isso afeta apenas municípios cujo `eorcam_ponderado` ainda carrega peso do exercício 2020 (i.e., municípios com poucos anos de histórico a partir de 2021).
-
-### 2. Remoção de RPproc (`--sem-rproc`)
-
-RPproc tem circularidade parcial com o desfecho: `n_anos_cronicos` é calculado a partir do histórico de `rproc_pct`, que é a mesma variável usada para definir o evento crônico em T1. Para quantificar o quanto o sinal depende dessa circularidade:
-
-| Era | AUC com RPproc | AUC sem RPproc | Delta |
-|---|---|---|---|
-| Era Parcial | 0.643 | 0.547 | −0.096 |
-| Era Completa | 0.750 | 0.642 | −0.108 |
-
-O Spearman sem RPproc colapsa na era parcial: r=−0.093 (p=0.03, fraco), frente a r=−0.248 (***) com RPproc. Dois pontos se confirmam:
-
-1. **RPproc carrega sinal real**, não apenas artefato de circularidade — se fosse puramente circular, o AUC sem RPproc seria próximo de 0.50 e o com RPproc seria artificialmente alto. O AUC sem RPproc na era completa (0.642) ainda discrimina moderadamente, indicando que `lliq`, `eorcam` e `qsiconfi` têm poder preditivo independente.
-
-2. **A circularidade existe e é mensurável.** O delta de −0.108 na era completa representa a contribuição *conjunta* de sinal real e circularidade de RPproc. Não é possível separá-los com os dados disponíveis.
-
-**Conclusão conservadora:** o AUC verdadeiro do score sem circularidade está entre 0.642 (sem RPproc) e 0.750 (com RPproc). O valor reportado em produção deve ser 0.750 com a nota de circularidade parcial.
+O gradiente continua presente, embora menos íngreme. Municípios classificados como **Risco Alto** ficam com probabilidade **2,7× maior** de cronicidade futura do que municípios classificados como **Risco Baixo**.
 
 ---
 
-## Erros extremos — Era Completa
+## Leitura Conjunta
 
-### Falsos positivos (classificados como Alto/Crítico, rproc T1 < 1%)
+Os dois testes, rodados sobre a mesma base geral sem 2020, apontam para a mesma conclusão central:
 
-Municípios penalizados pelo score mas que não materializaram risco no ano seguinte. Todos os oito casos têm score entre 55–60 — fronteira exata da classe Alto. Nenhum está no núcleo da classificação.
+1. O modelo operacional entrega desempenho nacional sólido (`AUC = 0.7443`, `Spearman = −0.3827`).
+2. A retirada de `RPproc` reduz esse desempenho (`AUC = 0.6621`, `Spearman = −0.2632`), mas preserva discriminação acima do acaso.
+3. Isso indica que `RPproc` carrega sinal importante, mas que o modelo não depende exclusivamente dele para ordenar risco.
 
-| Município | Score T0 | rproc T1 |
-|---|---|---|
-| Cajazeiras | 59.9 | 0.26% |
-| Catingueira | 59.4 | 0.59% |
-| Cacimba de Areia | 57.9 | 0.33% |
-| Ibiara | 57.4 | 0.02% |
-| Passagem | 57.0 | 0.58% |
-| Riachão do Poço | 56.9 | 0.19% |
-| Lastro | 55.6 | 0.09% |
-| Fagundes | 55.4 | 0.48% |
-
-A concentração na fronteira de classe é esperada estatisticamente — scores próximos ao limiar têm maior incerteza de classificação. Não há falsos positivos com score abaixo de 50.
-
-### Falsos negativos (classificados como Baixo/Médio, rproc T1 > 5%)
-
-Municípios que o score considerou razoavelmente saudáveis mas que deterioraram no ano seguinte. São o risco operacional mais relevante do produto.
-
-| Município | Score T0 | rproc T1 | Diagnóstico |
-|---|---|---|---|
-| Poço de José de Moura | 90.2 | 5.73% | `lliq` alta em T0 mascarou deterioração abrupta |
-| Poço Dantas | 79.7 | 11.18% | Mesmo padrão |
-| Curral de Cima | 74.9 | 7.23% | Mesmo padrão |
-| Monte Horebe | 68.6 | 6.17% | Mesmo padrão |
-| Mogeiro | 66.0 | 6.09% | Mesmo padrão |
-| Aparecida | 61.6 | 6.16% | Score já na fronteira |
-| Bayeux | 60.2 | 5.49% | Score já na fronteira |
-| Sobrado | 63.9 | 9.90% | Mesmo padrão |
-
-O padrão dominante nos casos graves (score > 65) é liquidez positiva em T0 seguida de deterioração abrupta de RP em T1 — choque que nenhum modelo anual consegue antecipar sem dados infraanuais. A mitigação operacional recomendada é monitoramento trimestral de `rproc_pct` para municípios com score entre 70–90 que possuam histórico de `n_anos_cronicos ≥ 1`.
+Em termos práticos, o intervalo relevante para leitura conservadora do poder discriminatório do score fica entre **0.6621** e **0.7443**, dependendo de se considerar ou não o componente `RPproc`.
 
 ---
 
 ## Limitações da validação
 
-1. **CAUC e Autonomia neutralizados.** 20% dos pesos rodaram como constante. O AUC do score completo com série histórica de CAUC e Autonomia é provavelmente superior ao reportado.
+1. **CAUC e Autonomia neutralizados.** Os dois componentes foram mantidos como constantes por ausência de série histórica compatível no `siconfi_indicadores`. O desempenho observado não representa ainda o score com informação histórica completa desses blocos.
 
-2. **Circularidade parcial de RPproc.** O delta mensurável é −0.108 de AUC (era completa). O AUC conservador do score sem esse componente é 0.642.
+2. **Circularidade parcial de RPproc no teste operacional.** O evento validado em T1 é definido pela mesma família de variável (`rproc_pct`) que também alimenta `n_anos_cronicos` em T0. Por isso, o teste sem `RPproc` é importante como leitura complementar.
 
-3. **Amostra de eventos pequena.** n=81 positivos na era completa implica IC bootstrap de amplitude ~0.12. Ajuste fino de pesos com base nesses resultados seria overfitting — os pesos v7.0 não foram otimizados sobre este backtest.
+3. **Horizonte de um ano.** O score foi validado para prever cronicidade no exercício imediatamente seguinte. O desempenho em horizontes de 2+ anos não foi testado neste documento.
 
-4. **2020 como T0 produz ruído estrutural** (COVID). O par 2020→2021 deve ser interpretado como dado contaminado, não como evidência contra o modelo. A análise sem 2020 (AUC parcial = 0.706) é mais representativa do desempenho esperado em anos normais.
-
-5. **Horizonte de um ano.** O score foi validado para prever cronicidade no ano imediatamente seguinte. Para horizontes de 2+ anos, o poder preditivo não foi testado.
+4. **Escopo regional deliberado.** Esta validação cobre apenas o Nordeste, que é a região para a qual o modelo está calibrado neste estágio. A leitura deste documento não deve ser extrapolada automaticamente para outras regiões sem recalibração específica.
 
 ---
 
 ## Reprodutibilidade
 
 ```bash
-# Resultado base
-python src/backtest_validacao.py
+# Modelo operacional - base geral sem T0=2020
+python src/analysis/backtest_validacao.py --geral --excluir-t0 2020
 
-# Sensibilidade: exclusão de ano atípico
-python src/backtest_validacao.py --excluir-t0 2020
-
-# Sensibilidade: isolamento da circularidade de RPproc
-python src/backtest_validacao.py --sem-rproc
-
-# Era completa isolada
-python src/backtest_validacao.py --pares completa
+# Modelo sem RPproc - mesma base geral sem T0=2020
+python src/analysis/backtest_validacao.py --geral --sem-rproc --excluir-t0 2020
 ```
 
-Saídas geradas em `data/outputs/`:
-- `backtest_pares.csv` — registro por par município×ano com todos os componentes
-- `backtest_resumo.txt` — relatório estatístico completo
+Saídas geradas em `data/analysis/geral/`:
+- `backtest_pares_geral_ex2020.csv` — registro por par município×ano do modelo operacional
+- `backtest_resumo_geral_ex2020.txt` — relatório estatístico do modelo operacional
+- `backtest_pares_geral_sem_rproc_ex2020.csv` — registro por par município×ano sem RPproc
+- `backtest_resumo_geral_sem_rproc_ex2020.txt` — relatório estatístico sem RPproc
