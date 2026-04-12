@@ -196,11 +196,19 @@ python pipeline.py --uf PB --mode incremental --steps collect,dbt,process,score
 
 # Rodar apenas etapas finais com dados já preparados
 python pipeline.py --uf PB --steps process,score,sync
+
+# Rodar CAUC diário para todo o Nordeste, sem prompts
+python pipeline.py --uf ALL --mode incremental --steps collect,dbt,process,score,sync --collectors cauc --yes
+
+# Rodar incrementais semanais dos demais coletores no Nordeste
+python pipeline.py --uf ALL --mode incremental --steps collect,dbt,process,score,sync --collectors siconfi,dca,pncp --yes
 ```
 
 **Observação sobre `--uf ALL`:**
-- com `collect`, o fluxo suportado hoje é o incremental previsto pelo orquestrador
 - sem `collect`, ele aceita apenas `process`, `score` e `sync`
+- com `collect` e sem `--collectors`, preserva o modo legado `CAUC-only`
+- com `collect` e `--collectors`, vira um `ALL` real para as UFs oficiais do Nordeste (`AL, BA, CE, MA, PB, PE, PI, RN, SE`)
+- UFs fora desse conjunto, como `MG`, são ignoradas no modo coletivo
 
 ---
 

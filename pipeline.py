@@ -9,11 +9,12 @@ Uso:
     python pipeline.py --uf CE
     python pipeline.py --uf ALL --steps process,score,sync
     python pipeline.py --uf ALL --mode incremental --steps collect,dbt,process,score,sync
+    python pipeline.py --uf ALL --mode incremental --steps collect,dbt,process,score,sync --collectors cauc --yes
 
 Regras para --uf ALL:
     - sem collect: aceita apenas process, score e sync
-    - com collect: faz somente coleta incremental de CAUC para cada UF presente,
-      depois roda dbt uma vez e process -> score -> sync para todas as UFs
+    - com collect e sem --collectors: preserva o modo legado CAUC-only
+    - com collect e com --collectors: ALL real para as UFs oficiais do Nordeste
 """
 
 import subprocess
@@ -34,6 +35,8 @@ from src.utils.supabase_sync import run as supabase_sync
 
 ETAPAS_VALIDAS = {"collect", "dbt", "process", "score", "sync"}
 ETAPAS_ORDEM = ["collect", "dbt", "process", "score", "sync"]
+COLETORES_VALIDOS = {"municipios", "cauc", "siconfi", "dca", "pncp"}
+COLETORES_ORDEM = ["municipios", "cauc", "siconfi", "dca", "pncp"]
 ALL_UFS_TOKEN = "ALL"
 ALL_UFS_NORDESTE = ["AL", "BA", "CE", "MA", "PB", "PE", "PI", "RN", "SE"]
 PIPELINE_VERSION = "v9.1"
@@ -93,36 +96,113 @@ def selecionar_etapas() -> set[str]:
         print("  Opcao invalida.")
 
 
-def etapa_collect(mode: str, uf: str) -> None:
+def obter_argumento(args: list[str], flag: str) -> str | None:
+    if flag in args:
+        idx = args.index(flag)
+        return args[idx + 1] if idx + 1 < len(args) else None
+
+    prefix = f"{flag}="
+    for arg in args:
+        if arg.startswith(prefix):
+            return arg.split("=", 1)[1]
+    return None
+
+
+def parse_etapas(raw: str | None) -> set[str] | None:
+    if raw is None:
+        return None
+    etapas = {e.strip() for e in raw.split(",") if e.strip()}
+    invalidas = etapas - ETAPAS_VALIDAS
+    if invalidas:
+        raise ValueError(
+            f"  Erro: etapas invalidas: {invalidas}. Use: collect, dbt, process, score, sync."
+        )
+    return etapas
+
+
+def _parse_csv_arg(raw: str | None) -> list[str] | None:
+    if raw is None:
+        return None
+    return [item.strip() for item in raw.split(",") if item.strip()]
+
+
+def normalizar_coletores(raw: str | None) -> list[str] | None:
+    coletores = _parse_csv_arg(raw)
+    if coletores is None:
+        return None
+    if not coletores:
+        raise ValueError("  Erro: --collectors nao pode ser vazio.")
+
+    invalidos = {c.lower() for c in coletores} - COLETORES_VALIDOS
+    if invalidos:
+        raise ValueError(
+            f"  Erro: coletores invalidos: {invalidos}. "
+            "Use: municipios, cauc, siconfi, dca, pncp."
+        )
+
+    selecionados = []
+    coletores_set = {c.lower() for c in coletores}
+    for coletor in COLETORES_ORDEM:
+        if coletor in coletores_set:
+            selecionados.append(coletor)
+    return selecionados
+
+
+def coletores_execucao(uf: str, etapas: set[str], coletores: list[str] | None) -> list[str] | None:
+    if "collect" not in etapas:
+        return None
+    if uf == ALL_UFS_TOKEN and coletores is None:
+        return ["cauc"]
+    if coletores is None:
+        return list(COLETORES_ORDEM)
+    return list(coletores)
+
+
+def etapa_collect(mode: str, uf: str, *, coletores: list[str] | None = None) -> None:
     print("\n" + "=" * 55)
     print(f"  ETAPA: COLETA [{mode.upper()}] - {uf}")
     print("=" * 55)
 
-    print("\n[1/5] Municipios...")
-    municipios.run(uf=uf)
+    coletores_ativos = coletores or list(COLETORES_ORDEM)
+    etapas_coleta = []
 
-    print("\n[2/5] CAUC...")
-    cauc.run(uf=uf)
+    if "municipios" in coletores_ativos:
+        etapas_coleta.append(("Municipios", lambda: municipios.run(uf=uf)))
+    if "cauc" in coletores_ativos:
+        etapas_coleta.append(("CAUC", lambda: cauc.run(uf=uf)))
+    if "siconfi" in coletores_ativos:
+        etapas_coleta.append((f"SICONFI [{mode}]", lambda: siconfi.run(mode=mode, uf=uf)))
+    if "dca" in coletores_ativos:
+        etapas_coleta.append((f"DCA [{mode}]", lambda: dca.run(mode=mode, uf=uf)))
+    if "pncp" in coletores_ativos:
+        etapas_coleta.append((f"PNCP [{mode}]", lambda: pncp.run(mode=mode, uf=uf)))
 
-    print(f"\n[3/5] SICONFI [{mode}]...")
-    siconfi.run(mode=mode, uf=uf)
-
-    print(f"\n[4/5] DCA [{mode}]...")
-    dca.run(mode=mode, uf=uf)
-
-    print(f"\n[5/5] PNCP [{mode}]...")
-    pncp.run(mode=mode, uf=uf)
+    total = len(etapas_coleta)
+    for idx, (label, runner) in enumerate(etapas_coleta, start=1):
+        print(f"\n[{idx}/{total}] {label}...")
+        runner()
 
 
 def etapa_collect_cauc_incremental_all(ufs: list[str]) -> None:
     print("\n" + "=" * 55)
-    print("  ETAPA: COLETA INCREMENTAL CAUC - ALL")
+    print("  ETAPA: COLETA INCREMENTAL CAUC - ALL (LEGADO)")
     print("=" * 55)
 
     total = len(ufs)
     for idx, uf in enumerate(ufs, start=1):
         print(f"\n[{idx}/{total}] CAUC incremental - {uf}...")
+        get_paths(uf)
         cauc.run(uf=uf)
+
+
+def etapa_collect_all(mode: str, ufs: list[str], *, coletores: list[str]) -> None:
+    total = len(ufs)
+    for idx, uf in enumerate(ufs, start=1):
+        print("\n" + "-" * 55)
+        print(f"  COLETA ALL [{idx}/{total}] - {uf}")
+        print("-" * 55)
+        get_paths(uf)
+        etapa_collect(mode, uf, coletores=coletores)
 
 
 def etapa_dbt(uf: str) -> None:
@@ -221,34 +301,38 @@ def descobrir_ufs_presentes(*, for_sync_only: bool = False) -> list[str]:
 
 
 def filtrar_ufs_all(ufs: list[str]) -> list[str]:
-    """ALL executa apenas as UFs do Nordeste já presentes no workspace."""
+    """ALL executa apenas as UFs oficiais do Nordeste."""
     return [uf for uf in ALL_UFS_NORDESTE if uf in set(ufs)]
 
 
-def validar_uf_all(mode: str, etapas: set[str]) -> list[str]:
+def validar_uf_all(mode: str, etapas: set[str], coletores: list[str] | None = None) -> tuple[list[str], bool]:
     permitido_sem_collect = {"process", "score", "sync"}
-    permitido_com_collect = {"collect", "dbt", "process", "score", "sync"}
+    permitido_com_collect_legado = {"collect", "dbt", "process", "score", "sync"}
 
     if "collect" in etapas:
-        if etapas != permitido_com_collect:
-            print(
-                "  Erro: com --uf ALL + collect, o fluxo permitido e exatamente "
-                "collect,dbt,process,score,sync."
-            )
-            sys.exit(1)
         if mode != "incremental":
             print("  Erro: com --uf ALL + collect, o modo deve ser incremental.")
             sys.exit(1)
-        ufs = descobrir_ufs_presentes()
-    else:
-        if not etapas.issubset(permitido_sem_collect):
-            print(
-                "  Erro: --uf ALL sem collect aceita apenas etapas entre "
-                "process,score,sync."
-            )
-            sys.exit(1)
-        ufs = descobrir_ufs_presentes(for_sync_only=(etapas == {"sync"}))
 
+        if coletores is None:
+            if etapas != permitido_com_collect_legado:
+                print(
+                    "  Erro: com --uf ALL + collect sem --collectors, o fluxo permitido "
+                    "permanece exatamente collect,dbt,process,score,sync."
+                )
+                sys.exit(1)
+            return list(ALL_UFS_NORDESTE), True
+
+        return list(ALL_UFS_NORDESTE), False
+
+    if not etapas.issubset(permitido_sem_collect):
+        print(
+            "  Erro: --uf ALL sem collect aceita apenas etapas entre "
+            "process,score,sync."
+        )
+        sys.exit(1)
+
+    ufs = descobrir_ufs_presentes(for_sync_only=(etapas == {"sync"}))
     ufs = filtrar_ufs_all(ufs)
 
     if not ufs:
@@ -257,78 +341,69 @@ def validar_uf_all(mode: str, etapas: set[str]) -> list[str]:
         )
         sys.exit(1)
 
-    return ufs
+    return ufs, False
 
 
 def main() -> None:
     args = sys.argv[1:]
+    non_interactive = "--yes" in args or "--non-interactive" in args
 
-    if "--uf" in args:
-        idx = args.index("--uf")
-        uf = args[idx + 1].upper() if idx + 1 < len(args) else "PB"
-    else:
-        uf_inline = next((a.split("=", 1)[1] for a in args if a.startswith("--uf=")), None)
-        uf = uf_inline.upper() if uf_inline else None
+    uf_raw = obter_argumento(args, "--uf")
+    uf = uf_raw.upper() if uf_raw else None
 
-    if "--mode" in args:
-        idx = args.index("--mode")
-        mode = args[idx + 1] if idx + 1 < len(args) else None
-        if mode not in ("full", "incremental"):
-            print(f"  Erro: --mode deve ser 'full' ou 'incremental'. Recebido: '{mode}'")
-            sys.exit(1)
-    else:
-        mode_inline = next((a.split("=", 1)[1] for a in args if a.startswith("--mode=")), None)
-        mode = mode_inline if mode_inline in ("full", "incremental") else None
+    mode = obter_argumento(args, "--mode")
+    if mode is not None and mode not in ("full", "incremental"):
+        print(f"  Erro: --mode deve ser 'full' ou 'incremental'. Recebido: '{mode}'")
+        sys.exit(1)
 
-    if "--steps" in args:
-        idx = args.index("--steps")
-        raw = args[idx + 1] if idx + 1 < len(args) else ""
-        etapas = {e.strip() for e in raw.split(",") if e.strip()}
-        invalidas = etapas - ETAPAS_VALIDAS
-        if invalidas:
-            print(f"  Erro: etapas invalidas: {invalidas}. Use: collect, dbt, process, score, sync.")
-            sys.exit(1)
-    else:
-        steps_inline = next((a.split("=", 1)[1] for a in args if a.startswith("--steps=")), None)
-        if steps_inline:
-            etapas = {e.strip() for e in steps_inline.split(",") if e.strip()}
-            invalidas = etapas - ETAPAS_VALIDAS
-            if invalidas:
-                print(f"  Erro: etapas invalidas: {invalidas}.")
-                sys.exit(1)
-        else:
-            etapas = None
+    try:
+        etapas = parse_etapas(obter_argumento(args, "--steps"))
+        coletores = normalizar_coletores(obter_argumento(args, "--collectors"))
+    except ValueError as exc:
+        print(str(exc))
+        sys.exit(1)
 
     if uf is None:
-        uf = selecionar_uf()
+        uf = "PB" if non_interactive else selecionar_uf()
 
     if mode is None:
-        if etapas is None or "collect" in etapas:
+        if non_interactive:
+            mode = "incremental"
+        elif etapas is None or "collect" in etapas:
             mode = selecionar_modo()
         else:
             mode = "incremental"
 
     if etapas is None:
-        etapas = selecionar_etapas()
+        etapas = set(ETAPAS_ORDEM) if non_interactive else selecionar_etapas()
 
     ufs_all = None
+    all_legado = False
     if uf == ALL_UFS_TOKEN:
-        ufs_all = validar_uf_all(mode, etapas)
+        ufs_all, all_legado = validar_uf_all(mode, etapas, coletores)
 
     if uf != ALL_UFS_TOKEN:
         get_paths(uf)
 
     etapas_str = " -> ".join(e for e in ETAPAS_ORDEM if e in etapas)
     alvo_str = ", ".join(ufs_all) if ufs_all else uf
+    coletores_resolvidos = coletores_execucao(uf, etapas, coletores)
+    coletores_str = ", ".join(c.upper() for c in coletores_resolvidos) if coletores_resolvidos else "-"
 
     print()
     print("  ---------------------------------------------")
     print(f"  UF    : {alvo_str}")
     print(f"  Modo  : {mode}")
     print(f"  Etapas: {etapas_str}")
+    if "collect" in etapas:
+        print(f"  Coleta: {coletores_str}")
     print("  ---------------------------------------------")
     print()
-    input("  Pressione Enter para iniciar ou Ctrl+C para cancelar...")
+    if uf == ALL_UFS_TOKEN and "collect" in etapas and all_legado:
+        print("  Aviso: --uf ALL + collect sem --collectors esta em modo legado CAUC-only.")
+        print()
+    if not non_interactive:
+        input("  Pressione Enter para iniciar ou Ctrl+C para cancelar...")
 
     t0 = time.time()
 
@@ -337,7 +412,11 @@ def main() -> None:
             assert ufs_all is not None
 
             if "collect" in etapas:
-                etapa_collect_cauc_incremental_all(ufs_all)
+                if all_legado:
+                    etapa_collect_cauc_incremental_all(ufs_all)
+                else:
+                    assert coletores_resolvidos is not None
+                    etapa_collect_all(mode, ufs_all, coletores=coletores_resolvidos)
 
             if "dbt" in etapas:
                 etapa_dbt("ALL")
@@ -355,7 +434,7 @@ def main() -> None:
                     etapa_sync(uf_item)
         else:
             if "collect" in etapas:
-                etapa_collect(mode, uf)
+                etapa_collect(mode, uf, coletores=coletores_resolvidos)
 
             if "dbt" in etapas:
                 etapa_dbt(uf)

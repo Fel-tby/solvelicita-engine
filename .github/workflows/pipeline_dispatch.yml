@@ -1,0 +1,137 @@
+name: Pipeline Manual
+
+on:
+  workflow_dispatch:
+    inputs:
+      uf:
+        description: "UF alvo (ex.: PB, CE, RN ou ALL)"
+        required: true
+        default: "ALL"
+      mode:
+        description: "Modo de coleta"
+        required: true
+        default: "incremental"
+        type: choice
+        options:
+          - incremental
+          - full
+      steps:
+        description: "Etapas separadas por virgula"
+        required: true
+        default: "collect,dbt,process,score,sync"
+      collectors:
+        description: "Coletores separados por virgula; deixe vazio para legado ALL-CAUC"
+        required: false
+        default: ""
+
+permissions:
+  contents: read
+
+concurrency:
+  group: pipeline-dispatch-${{ github.event.inputs.uf }}-${{ github.run_id }}
+  cancel-in-progress: false
+
+jobs:
+  pipeline-dispatch:
+    runs-on: ubuntu-latest
+    timeout-minutes: 360
+    env:
+      GCP_PROJECT_ID: ${{ secrets.GCP_PROJECT_ID }}
+      SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+      SUPABASE_KEY: ${{ secrets.SUPABASE_KEY }}
+      BQ_ENABLED: "true"
+      BQ_DATASET: "raw"
+      GCP_SA_KEY_PATH: ${{ github.workspace }}/gcp-credentials.json
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: "pip"
+          cache-dependency-path: requirements.txt
+
+      - name: Setup main venv
+        shell: bash
+        run: |
+          python -m venv venv
+          ./venv/bin/python -m pip install --upgrade pip
+          ./venv/bin/pip install -r requirements.txt
+
+      - name: Setup dbt venv
+        shell: bash
+        run: |
+          python -m venv venv_dbt
+          ./venv_dbt/bin/python -m pip install --upgrade pip
+          ./venv_dbt/bin/pip install dbt-core dbt-bigquery
+
+      - name: Materialize credentials
+        shell: bash
+        env:
+          GCP_SA_KEY: ${{ secrets.GCP_SA_KEY }}
+        run: |
+          printf '%s' "$GCP_SA_KEY" > "$GCP_SA_KEY_PATH"
+          cat > .env <<EOF
+          GCP_SA_KEY_PATH=$GCP_SA_KEY_PATH
+          GCP_PROJECT_ID=$GCP_PROJECT_ID
+          BQ_ENABLED=$BQ_ENABLED
+          BQ_DATASET=$BQ_DATASET
+          SUPABASE_URL=$SUPABASE_URL
+          SUPABASE_KEY=$SUPABASE_KEY
+          EOF
+          mkdir -p dbt
+          cat > dbt/profiles.yml <<EOF
+          solvelicita:
+            target: dev
+            outputs:
+              dev:
+                type: bigquery
+                method: service-account
+                project: $GCP_PROJECT_ID
+                dataset: staging
+                location: southamerica-east1
+                keyfile: "$GCP_SA_KEY_PATH"
+                threads: 4
+          EOF
+
+      - name: Run dbt deps
+        shell: bash
+        run: ./venv_dbt/bin/dbt deps --project-dir dbt --profiles-dir dbt
+
+      - name: Run manual pipeline
+        shell: bash
+        env:
+          INPUT_UF: ${{ github.event.inputs.uf }}
+          INPUT_MODE: ${{ github.event.inputs.mode }}
+          INPUT_STEPS: ${{ github.event.inputs.steps }}
+          INPUT_COLLECTORS: ${{ github.event.inputs.collectors }}
+        run: |
+          cmd=(
+            ./venv/bin/python
+            pipeline.py
+            --uf "$INPUT_UF"
+            --mode "$INPUT_MODE"
+            --steps "$INPUT_STEPS"
+            --yes
+          )
+
+          if [ -n "$INPUT_COLLECTORS" ]; then
+            cmd+=(--collectors "$INPUT_COLLECTORS")
+          fi
+
+          "${cmd[@]}"
+
+      - name: Upload logs and artifacts
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: pipeline-dispatch-artifacts
+          path: |
+            dbt/logs/
+            data/outputs/
+            data/processed/
+            data/analysis/
+          if-no-files-found: ignore

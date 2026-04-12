@@ -52,28 +52,90 @@ CONTA_PASSIVO_FIN    = "Passivo Financeiro"
 CONTA_REC_TRIBUTARIA = "1.1.0.0.00.0.0 - Impostos, Taxas e Contribuições de Melhoria"
 CONTA_REC_CORRENTE   = "RECEITAS (EXCETO INTRA-ORÇAMENTÁRIAS) (I)"
 COLUNA_REALIZADO     = "Receitas Realizadas"
+CONTA_ATIVO_FIN_KEY = CONTA_ATIVO_FIN.lower().strip()
+CONTA_PASSIVO_FIN_KEY = CONTA_PASSIVO_FIN.lower().strip()
 
 
-def fetch_dca(id_ente: str, ano: int, anexo: str, client: httpx.Client) -> list[dict]:
+class Progresso:
+    """Contador simples com exibicao em linha unica para a coleta DCA."""
+
+    def __init__(self, total: int, label: str = ""):
+        self.total = total
+        self.label = label
+        self.feitas = 0
+        self.erros = 0
+        self.vazias = 0
+        self.registros = 0
+        self._inicio = time.time()
+
+    def tick(self, n_registros: int = 0, erro: bool = False, vazia: bool = False) -> None:
+        self.feitas += 1
+        self.registros += n_registros
+        if erro:
+            self.erros += 1
+        if vazia:
+            self.vazias += 1
+        self._render()
+
+    def _render(self) -> None:
+        elapsed = time.time() - self._inicio
+        pct = self.feitas / self.total * 100 if self.total else 100
+        bar_len = 30
+        filled = int(bar_len * self.feitas / self.total) if self.total else bar_len
+        bar = "=" * filled + "-" * (bar_len - filled)
+        eta = (elapsed / self.feitas * (self.total - self.feitas)) if self.feitas else 0
+        eta_str = f"{eta/60:.0f}min" if eta >= 60 else f"{eta:.0f}s"
+        line = (
+            f"\r  {self.label} [{bar}] "
+            f"{self.feitas:,}/{self.total:,} ({pct:.1f}%) | "
+            f"regs: {self.registros:,} | "
+            f"erros: {self.erros} | "
+            f"ETA: {eta_str} "
+        )
+        sys.stdout.write(line)
+        sys.stdout.flush()
+
+    def finalizar(self) -> None:
+        elapsed = time.time() - self._inicio
+        sys.stdout.write("\n")
+        sys.stdout.flush()
+        print(f"  ✅ {self.label}: {self.registros:,} registros em {elapsed/60:.1f} min")
+
+
+def _normalizar_texto(valor: object) -> str:
+    return str(valor or "").strip().lower()
+
+
+def _to_float(valor: object) -> float | None:
+    try:
+        return float(valor or 0)
+    except (ValueError, TypeError):
+        return None
+
+
+def fetch_dca(id_ente: str, ano: int, anexo: str, client: httpx.Client) -> tuple[list[dict], bool]:
     params = {"an_exercicio": ano, "no_anexo": anexo, "id_ente": id_ente}
     for tentativa in range(1, MAX_RETRY + 1):
         try:
             r = client.get(API_BASE, params=params, timeout=30)
             r.raise_for_status()
-            return r.json().get("items", [])
+            return r.json().get("items", []), True
         except httpx.HTTPStatusError as e:
             if e.response.status_code == 404:
-                return []
+                return [], True
             log.warning(f"  HTTP {e.response.status_code} | {id_ente} {ano} | tentativa {tentativa}")
         except Exception as e:
             log.warning(f"  Erro: {e} | {id_ente} {ano} | tentativa {tentativa}")
         time.sleep(DELAY * tentativa)
-    return []
+    return [], False
 
 
 def explorar_campos(id_ente: str, ano: int, anexo: str, client: httpx.Client) -> None:
     """Revalida mapeamento de campos após atualizações da API. Uso pontual."""
-    items = fetch_dca(id_ente, ano, anexo, client)
+    items, sucesso = fetch_dca(id_ente, ano, anexo, client)
+    if not sucesso:
+        log.warning(f"Falha ao consultar: {id_ente} {ano} {anexo}")
+        return
     if not items:
         log.warning(f"Nenhum dado: {id_ente} {ano} {anexo}")
         return
@@ -88,33 +150,48 @@ def explorar_campos(id_ente: str, ano: int, anexo: str, client: httpx.Client) ->
 
 
 def extrair_bp(items: list[dict], nome_conta: str) -> float | None:
-    nome_lower = nome_conta.lower().strip()
+    nome_lower = _normalizar_texto(nome_conta)
     for item in items:
-        if str(item.get("conta", "")).lower().strip() == nome_lower:
-            try:
-                return float(item.get("valor") or 0)
-            except (ValueError, TypeError):
-                return None
+        if _normalizar_texto(item.get("conta", "")) == nome_lower:
+            return _to_float(item.get("valor"))
     return None
 
 
 def extrair_receita(items: list[dict], nome_conta: str) -> float | None:
-    nome_lower = nome_conta.lower().strip()
+    nome_lower = _normalizar_texto(nome_conta)
+    fallback = None
     for item in items:
-        conta_ok  = str(item.get("conta", "")).lower().strip() == nome_lower
+        conta_ok = _normalizar_texto(item.get("conta", "")) == nome_lower
         coluna_ok = str(item.get("coluna", "")).strip() == COLUNA_REALIZADO
-        if conta_ok and coluna_ok:
-            try:
-                return float(item.get("valor") or 0)
-            except (ValueError, TypeError):
-                return None
+        if not conta_ok:
+            continue
+        valor = _to_float(item.get("valor"))
+        if coluna_ok:
+            return valor
+        if fallback is None:
+            fallback = valor
+    return fallback
+
+
+def extrair_metricas_bp(items: list[dict]) -> tuple[float | None, float | None]:
+    ativo_fin = None
+    passivo_fin = None
+
     for item in items:
-        if str(item.get("conta", "")).lower().strip() == nome_lower:
-            try:
-                return float(item.get("valor") or 0)
-            except (ValueError, TypeError):
-                return None
-    return None
+        conta = _normalizar_texto(item.get("conta", ""))
+        valor = _to_float(item.get("valor"))
+        if conta == CONTA_ATIVO_FIN_KEY:
+            ativo_fin = valor
+        elif conta == CONTA_PASSIVO_FIN_KEY:
+            passivo_fin = valor
+
+    return ativo_fin, passivo_fin
+
+
+def extrair_metricas_receita(items: list[dict]) -> tuple[float | None, float | None]:
+    rec_trib = extrair_receita(items, CONTA_REC_TRIBUTARIA)
+    rec_corr = extrair_receita(items, CONTA_REC_CORRENTE)
+    return rec_trib, rec_corr
 
 
 def coletar_dca(
@@ -126,9 +203,9 @@ def coletar_dca(
     Coleta DCA para os municípios e anos informados.
     Retorna DataFrame com valores brutos — sem cálculo de indicadores.
     """
-    registros    = []
-    n_registros  = len(municipios) * len(anos)
-    processados  = 0
+    registros = []
+    n_registros = len(municipios) * len(anos)
+    progresso = Progresso(n_registros, "DCA")
 
     with httpx.Client(follow_redirects=True) as client:
         if explorar:
@@ -136,30 +213,23 @@ def coletar_dca(
             explorar_campos("2504009", 2024, ANEXO_REC, client)
             return pd.DataFrame()
 
-        for _, mun in municipios.iterrows():
-            cod  = str(mun["cod_ibge"])
-            nome = mun["ente"]
-            pop  = mun.get("populacao", 0)
+        for mun in municipios.itertuples(index=False):
+            cod = str(mun.cod_ibge)
+            nome = mun.ente
+            pop = getattr(mun, "populacao", 0)
 
             for ano in anos:
-                processados += 1
-                log.info(f"[{processados:4d}/{n_registros}] {nome} ({cod}) — {ano}")
-
-                items_bp  = fetch_dca(cod, ano, ANEXO_BP, client)
-                time.sleep(DELAY)
+                items_bp, ok_bp = fetch_dca(cod, ano, ANEXO_BP, client)
 
                 ativo_fin = passivo_fin = None
                 if items_bp:
-                    ativo_fin   = extrair_bp(items_bp, CONTA_ATIVO_FIN)
-                    passivo_fin = extrair_bp(items_bp, CONTA_PASSIVO_FIN)
+                    ativo_fin, passivo_fin = extrair_metricas_bp(items_bp)
 
-                items_rec = fetch_dca(cod, ano, ANEXO_REC, client)
-                time.sleep(DELAY)
+                items_rec, ok_rec = fetch_dca(cod, ano, ANEXO_REC, client)
 
                 rec_trib = rec_corr = None
                 if items_rec:
-                    rec_trib = extrair_receita(items_rec, CONTA_REC_TRIBUTARIA)
-                    rec_corr = extrair_receita(items_rec, CONTA_REC_CORRENTE)
+                    rec_trib, rec_corr = extrair_metricas_receita(items_rec)
 
                 registros.append({
                     "cod_ibge"          : cod,
@@ -174,6 +244,13 @@ def coletar_dca(
                     "rec_disponivel"    : bool(items_rec),
                 })
 
+                progresso.tick(
+                    n_registros=int(bool(items_bp or items_rec)),
+                    erro=(not ok_bp) or (not ok_rec),
+                    vazia=(not items_bp) and (not items_rec) and ok_bp and ok_rec,
+                )
+
+    progresso.finalizar()
     return pd.DataFrame(registros)
 
 
@@ -205,21 +282,24 @@ def run(
                 f"Execute primeiro: python src/collectors/municipios.py --uf {uf}"
             )
         municipios = pd.read_csv(path_mun, dtype={"cod_ibge": str})
-        log.info(f"  {len(municipios)} municípios carregados ({uf})")
 
     anos = ANOS_FULL if mode == "full" else ANOS_INCREMENTAL
-    log.info(f"  Modo DCA: {mode.upper()} | Anos: {anos} | UF: {uf}")
-
     n_reg = len(municipios) * len(anos)
-    log.info(
-        f"\nIniciando coleta DCA "
-        f"({n_reg} registros | {n_reg * 2} requisições | "
-        f"~{n_reg * 2 * DELAY / 60:.0f} min)..."
-    )
+
+    print("\n" + "=" * 55)
+    print(f"  Coletor DCA - Municipios de {uf}")
+    print(f"  Modo: {mode.upper()} | Anos: {anos}")
+    print("=" * 55)
+    print()
+    print(f"  Municipios carregados: {len(municipios)}")
+    print(f"  Malha montada       : {n_reg:,} municipio-ano")
+    print(f"  Requisicoes         : {n_reg * 2:,}")
+    print()
 
     df_novo = coletar_dca(municipios, anos)
 
-    log.info(
+    print()
+    print(
         f"  ✅ Coleta concluida: {len(df_novo)} linhas "
         f"({df_novo['ano'].nunique()} anos)"
     )
