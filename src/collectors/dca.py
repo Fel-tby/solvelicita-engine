@@ -24,7 +24,7 @@ from datetime import date
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
-from utils.paths import get_paths
+from collectors.municipios import carregar_municipios
 from utils.bigquery_loader import publish_raw_merge
 
 logging.basicConfig(
@@ -267,21 +267,15 @@ def run(
     mode       : "full" — coleta ANOS_FULL completo
                  "incremental" — coleta ANOS_INCREMENTAL e merge no raw existente
     uf         : sigla do estado (default "PB")
-    municipios : DataFrame de municípios. Se None, lê do CSV processado da UF.
+    municipios : DataFrame de municípios. Se None, carrega da base municipal
+                 compartilhada, com fallback para API do SICONFI.
 
     Retorna o DataFrame bruto coletado na execucao.
     """
-    uf    = uf.upper()
-    paths = get_paths(uf)
+    uf = uf.upper()
 
     if municipios is None:
-        path_mun = paths["processed"] / f"municipios_{uf.lower()}_tabela.csv"
-        if not path_mun.exists():
-            raise FileNotFoundError(
-                f"Tabela de municípios não encontrada: {path_mun}\n"
-                f"Execute primeiro: python src/collectors/municipios.py --uf {uf}"
-            )
-        municipios = pd.read_csv(path_mun, dtype={"cod_ibge": str})
+        municipios = carregar_municipios(uf=uf, prefer_local=True, persist_local=True)
 
     anos = ANOS_FULL if mode == "full" else ANOS_INCREMENTAL
     n_reg = len(municipios) * len(anos)

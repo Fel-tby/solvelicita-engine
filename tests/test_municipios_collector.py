@@ -136,3 +136,52 @@ def test_run_publica_com_merge_seguro(monkeypatch):
         assert csv_df["cod_ibge"].tolist() == ["2500106", "2500205"]
     finally:
         shutil.rmtree(temp_root, ignore_errors=True)
+
+
+def test_carregar_municipios_faz_fallback_para_api_quando_csv_nao_existe(monkeypatch):
+    class DummyResponse:
+        def raise_for_status(self):
+            return None
+
+        def json(self):
+            return {
+                "items": [
+                    {
+                        "cod_ibge": "2800100",
+                        "uf": "SE",
+                        "esfera": "M",
+                        "ente": "Amparo de Sao Francisco",
+                        "cnpj": "1",
+                        "populacao": 2000,
+                    },
+                    {
+                        "cod_ibge": "3100104",
+                        "uf": "MG",
+                        "esfera": "M",
+                        "ente": "Abadia dos Dourados",
+                        "cnpj": "2",
+                        "populacao": 3000,
+                    },
+                ]
+            }
+
+    temp_root = Path.cwd() / ".pytest_artifacts" / f"municipios_{uuid4().hex[:8]}"
+    temp_root.mkdir(parents=True, exist_ok=True)
+
+    def fake_get(*args, **kwargs):
+        return DummyResponse()
+
+    def fake_get_paths(uf: str):
+        processed = temp_root / "processed" / uf.upper()
+        processed.mkdir(parents=True, exist_ok=True)
+        return {"processed": processed}
+
+    monkeypatch.setattr(municipios.httpx, "get", fake_get)
+    monkeypatch.setattr(municipios, "get_paths", fake_get_paths)
+
+    try:
+        result = municipios.carregar_municipios("SE", prefer_local=True, persist_local=False)
+        assert len(result) == 1
+        assert result["cod_ibge"].tolist() == ["2800100"]
+    finally:
+        shutil.rmtree(temp_root, ignore_errors=True)

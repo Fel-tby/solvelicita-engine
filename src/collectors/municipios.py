@@ -20,6 +20,7 @@ from utils.paths import get_paths
 
 
 REQUIRED_COLUMNS = ["cod_ibge", "uf", "ente", "populacao"]
+MUNICIPIOS_API_URL = "https://apidatalake.tesouro.gov.br/ords/siconfi/tt/entes"
 
 
 def _preparar_lote_municipios(items: list[dict], uf: str) -> pd.DataFrame:
@@ -65,20 +66,9 @@ def _preparar_lote_municipios(items: list[dict], uf: str) -> pd.DataFrame:
     return df
 
 
-def run(uf: str = "PB") -> pd.DataFrame:
-    """
-    Busca municipios da UF informada no SICONFI e salva CSV de referencia.
-    Retorna DataFrame com colunas: cod_ibge, ente, cnpj, populacao, ...
-    """
-    uf = uf.upper()
-    paths = get_paths(uf)
-    out = paths["processed"] / f"municipios_{uf.lower()}_tabela.csv"
-
+def _baixar_municipios_api(uf: str) -> pd.DataFrame:
     print(f"Buscando municipios de {uf} no SICONFI...")
-    response = httpx.get(
-        "https://apidatalake.tesouro.gov.br/ords/siconfi/tt/entes",
-        timeout=30,
-    )
+    response = httpx.get(MUNICIPIOS_API_URL, timeout=30)
     response.raise_for_status()
     todos = response.json().get("items", [])
 
@@ -86,10 +76,43 @@ def run(uf: str = "PB") -> pd.DataFrame:
         item for item in todos
         if item.get("uf") == uf and item.get("esfera") == "M"
     ]
-    df = _preparar_lote_municipios(items_uf, uf)
+    return _preparar_lote_municipios(items_uf, uf)
 
-    df.to_csv(out, index=False, encoding="utf-8")
-    print(f"OK {len(df)} municipios salvos em {out}")
+
+def carregar_municipios(
+    uf: str = "PB",
+    *,
+    prefer_local: bool = True,
+    persist_local: bool = False,
+) -> pd.DataFrame:
+    """
+    Carrega a base municipal da UF.
+
+    Preferencialmente reutiliza o CSV local quando existir; caso contrario,
+    busca direto na API do SICONFI e opcionalmente persiste o artefato local.
+    """
+    uf = uf.upper()
+    paths = get_paths(uf)
+    out = paths["processed"] / f"municipios_{uf.lower()}_tabela.csv"
+
+    if prefer_local and out.exists():
+        df_local = pd.read_csv(out, dtype={"cod_ibge": str})
+        return _preparar_lote_municipios(df_local.to_dict("records"), uf)
+
+    df = _baixar_municipios_api(uf)
+    if persist_local:
+        df.to_csv(out, index=False, encoding="utf-8")
+        print(f"OK {len(df)} municipios salvos em {out}")
+    return df
+
+
+def run(uf: str = "PB") -> pd.DataFrame:
+    """
+    Busca municipios da UF informada no SICONFI e salva CSV de referencia.
+    Retorna DataFrame com colunas: cod_ibge, ente, cnpj, populacao, ...
+    """
+    uf = uf.upper()
+    df = carregar_municipios(uf, prefer_local=False, persist_local=True)
     print(df[["cod_ibge", "ente", "cnpj", "populacao"]].head())
 
     publish_raw_merge(

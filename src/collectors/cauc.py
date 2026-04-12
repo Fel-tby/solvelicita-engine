@@ -24,7 +24,7 @@ import urllib3
 urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
-from utils.paths import get_paths
+from collectors.municipios import carregar_municipios
 from utils.bigquery_loader import publish_raw_merge
 
 URL_CAUC_BULK = (
@@ -87,21 +87,13 @@ def run(uf: str = "PB") -> pd.DataFrame:
     """
     uf    = uf.upper()
     hoje  = date.today().strftime("%Y-%m-%d")
-    paths = get_paths(uf)
 
     print("=" * 70)
     print(f"  Coletor CAUC — CKAN Tesouro Transparente")
     print(f"  UF: {uf} | Execução: {hoje}")
     print("=" * 70)
 
-    tabela_mun = paths["processed"] / f"municipios_{uf.lower()}_tabela.csv"
-    if not tabela_mun.exists():
-        raise FileNotFoundError(
-            f"Tabela de municípios não encontrada: {tabela_mun}\n"
-            f"Execute primeiro: python src/collectors/municipios.py --uf {uf}"
-        )
-
-    municipios_df = pd.read_csv(tabela_mun, dtype={"cod_ibge": str})
+    municipios_df = carregar_municipios(uf=uf, prefer_local=True, persist_local=True)
     ibges_uf      = set(municipios_df["cod_ibge"].tolist())
 
     print(f"\n  Baixando CSV nacional do CKAN...")
