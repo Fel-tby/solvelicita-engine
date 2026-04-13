@@ -15,7 +15,7 @@
 
 A validação usa **walk-forward por pares de anos consecutivos**: o score é calculado com dados de T0 e o desfecho observado é `rproc_pct` em T1. Isso replica a situação real de uso — o score prevê comportamento futuro a partir de informação presente, sem acesso a dados do período avaliado.
 
-Este documento adota, como recorte oficial, a **base geral sem T0=2020**. O desfecho binário continua sendo `rproc_pct > 3%` em T1 = **evento crônico**, o mesmo limiar usado internamente pelo score para classificar `n_anos_cronicos`.
+Este documento adota, como recorte oficial, a **base geral do modelo iniciada em 2021**. O desfecho binário continua sendo `rproc_pct > 3%` em T1 = **evento crônico**, o mesmo limiar usado internamente pelo score para classificar `n_anos_cronicos`.
 
 Dois testes são apresentados sobre a mesma base:
 
@@ -30,7 +30,7 @@ Dois testes são apresentados sobre a mesma base:
 |---|---|
 | Escopo geográfico | 9 UFs do Nordeste calibradas neste estágio do modelo: AL, BA, CE, MA, PB, PE, PI, RN e SE |
 | Universo | 1.431 municípios |
-| Base walk-forward sem T0=2020 | 4.824 pares município×ano |
+| Base walk-forward 2021–2025 | 4.824 pares município×ano |
 | Base principal reportada neste documento | 4.671 pares com score pleno |
 | Eventos crônicos na base principal | 905 (19,4%) |
 | Horizonte observado | T0→T1 em janela anual |
@@ -137,7 +137,7 @@ O gradiente continua presente, embora menos íngreme. Municípios classificados 
 
 ## Leitura Conjunta
 
-Os dois testes, rodados sobre a mesma base geral sem 2020, apontam para a mesma conclusão central:
+Os dois testes, rodados sobre a mesma base geral do modelo, apontam para a mesma conclusão central:
 
 1. O modelo operacional entrega desempenho nacional sólido (`AUC = 0.7443`, `Spearman = −0.3827`).
 2. A retirada de `RPproc` reduz esse desempenho (`AUC = 0.6621`, `Spearman = −0.2632`), mas preserva discriminação acima do acaso.
@@ -162,15 +162,15 @@ Em termos práticos, o intervalo relevante para leitura conservadora do poder di
 ## Reprodutibilidade
 
 ```bash
-# Modelo operacional - base geral sem T0=2020
+# Modelo operacional
 python src/analysis/backtest_validacao.py --geral --excluir-t0 2020
 
-# Modelo sem RPproc - mesma base geral sem T0=2020
+# Modelo sem RPproc
 python src/analysis/backtest_validacao.py --geral --sem-rproc --excluir-t0 2020
 ```
 
 Saídas geradas em `data/analysis/geral/`:
-- `backtest_pares_geral_ex2020.csv` — registro por par município×ano do modelo operacional
-- `backtest_resumo_geral_ex2020.txt` — relatório estatístico do modelo operacional
-- `backtest_pares_geral_sem_rproc_ex2020.csv` — registro por par município×ano sem RPproc
-- `backtest_resumo_geral_sem_rproc_ex2020.txt` — relatório estatístico sem RPproc
+- um CSV do modelo operacional com registro por par município×ano
+- um relatório estatístico do modelo operacional
+- um CSV do modelo sem `RPproc`
+- um relatório estatístico do modelo sem `RPproc`

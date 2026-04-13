@@ -480,7 +480,7 @@ nav {
   overflow-x: auto;
 }
 .doc-formula {
-  font-family: var(--mono);
+  font-family: var(--sans);
   font-size: 0.76rem;
   font-weight: 400;
   color: var(--text-mid);

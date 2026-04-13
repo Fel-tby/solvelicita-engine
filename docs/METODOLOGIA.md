@@ -112,7 +112,7 @@ Mede a **gravidade** das pendências do município no CAUC (Cadastro Único de C
 | **Leve** | Pendências de reporte (SICONFI, MCASP, PCASP) | Penalidade mínima |
 | **Regular** | Sem pendências | `Ccauc = 0.0` → 10 pts |
 
-A coleta é feita via Portal de Dados Abertos do Tesouro (CKAN) — snapshot nacional filtrado para municípios da PB.
+A coleta é feita via Portal de Dados Abertos do Tesouro (CKAN) — snapshot nacional filtrado para os municípios cobertos pela base publicada.
 
 ---
 
@@ -260,4 +260,4 @@ Municípios com `n_anos_cronicos ≥ 4` têm classificação máxima **travada e
 - DCA/FINBRA tem defasagem anual estrutural (~14 meses no pior caso) — afeta `Autonomia` apenas; `Lliq` usa RGF com defasagem máxima de 90–210 dias
 - `Lliq` negativo extremo pode indicar distorção de RPPS ou cancelamento contábil de empenhos — flag `dado_suspeito` sinaliza, mas detecção completa requer auditoria manual do Balanço Patrimonial
 - `rproc_pct` não distingue municípios que quitaram RP por pagamento real daqueles que quitaram por cancelamento contábil
-- Fase 0 cobre apenas municípios da Paraíba (223 municípios) — curvas de Autonomia calibradas para esse universo
+- A cobertura publicada atualmente contempla os 1.794 municípios do Nordeste — curvas de Autonomia podem exigir recalibração antes de eventual expansão para outros recortes

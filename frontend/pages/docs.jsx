@@ -76,11 +76,11 @@ export default function DocsPage() {
             <div id="doc-visao" className={`doc-page ${docId === 'visao' ? 'active' : ''}`}>
               <div className="doc-h1">Metodologia do Score de Solvência</div>
               <div className="doc-meta">Versão 7.0 · Março/2026 · <a href={siteConfig.repoUrl}>METODOLOGIA.md no GitHub</a></div>
-              <div className="doc-callout"><strong>Aviso:</strong> Score baseado exclusivamente em dados oficiais declarados pelo próprio município ao Tesouro Nacional (SICONFI/RREO/RGF e FINBRA/DCA) e ao Governo Federal (CAUC/STN). Qualquer questionamento sobre os dados deve ser direcionado às fontes originais.</div>
+              <div className="doc-callout"><strong>Aviso:</strong> O score usa apenas bases oficiais do Tesouro Nacional e do Governo Federal. Quando houver divergência ou questionamento sobre um dado, a referência correta é sempre a base pública de origem.</div>
               <div className="doc-h2">Objetivo</div>
               <p className="doc-p">SolveLicita responde à pergunta: <strong>"Essa prefeitura tem capacidade fiscal de honrar seus contratos?"</strong></p>
-              <p className="doc-p">O score mede a capacidade estrutural de solvência de curto a médio prazo, com horizonte de 12 a 24 meses, compatível com o ciclo de contratos públicos de fornecimento, serviços continuados e obras.</p>
-              <p className="doc-p">Não é um modelo de previsão de inadimplência pontual. É um score de risco relativo, construído exclusivamente com dados públicos.</p>
+              <p className="doc-p">O score mede a capacidade fiscal de curto a médio prazo, com horizonte de 12 a 24 meses, compatível com o ciclo de contratos públicos de fornecimento, serviços continuados e obras.</p>
+              <p className="doc-p">Não é um modelo de previsão pontual de inadimplência. É um indicador de risco relativo, construído exclusivamente com dados públicos e comparáveis.</p>
               <div className="doc-h2">Fontes</div>
               <table className="doc-table">
                 <thead><tr><th>Fonte</th><th>O que contém</th><th>Frequência</th></tr></thead>
@@ -98,8 +98,8 @@ export default function DocsPage() {
             <div id="doc-formula" className={`doc-page ${docId === 'formula' ? 'active' : ''}`}>
               <div className="doc-h1">Fórmula e pesos</div>
               <div className="doc-meta">Versão 7.0</div>
-              <div className="doc-code doc-formula">S = 35·f(Lliq) + 10·(1 − Ccauc)<br />+ 15·g(Eorcam) + 15·Qsiconfi + 10·h(Autonomia) + 15·i(RPproc)</div>
-              <p className="doc-p">O score é expresso em pontos (0–100). Cada componente é normalizado para [0, 1] antes de ser multiplicado pelo peso.</p>
+              <div className="doc-code doc-formula">Score = 35·Liquidez Líquida + 10·(1 − Bloqueio Federal)<br />+ 15·Execução Orçamentária + 15·Qualidade SICONFI + 10·Autonomia Tributária + 15·Histórico de Atrasos</div>
+              <p className="doc-p">O score é expresso em pontos, de 0 a 100. Antes de entrar na conta final, cada componente é convertido para uma escala comum de 0 a 1 e depois ponderado pelo seu peso.</p>
               <div className="doc-h2">Classificação</div>
               <table className="doc-table">
                 <thead><tr><th>Score</th><th>Classificação</th></tr></thead>
@@ -110,17 +110,17 @@ export default function DocsPage() {
                   <tr><td>&lt; 40</td><td><span className="badge b-critico">Crítico</span></td></tr>
                 </tbody>
               </table>
-              <div className="doc-callout">Além do score numérico, dois <strong>caps duros</strong> operam independentemente: municípios com histórico de não entrega de dados não podem ser classificados como Risco Baixo; municípios com padrão crônico de RP Processados têm teto em Risco Médio.</div>
+              <div className="doc-callout">Além do score numérico, o modelo aplica duas <strong>restrições independentes</strong>: municípios com baixa entrega de dados não podem ser classificados como Risco Baixo; municípios com atrasos recorrentes de pagamento têm teto em Risco Médio.</div>
             </div>
 
             <div id="doc-lliq" className={`doc-page ${docId === 'lliq' ? 'active' : ''}`}>
-              <div className="doc-h1">Liquidez Líquida (Lliq)</div>
+              <div className="doc-h1">Liquidez Líquida</div>
               <div className="doc-meta">Peso 35% · Fonte: RGF Anexo 05</div>
-              <div className="doc-code doc-formula">Lliq = (DCL_total_pós_RP − DCL_RPPS_pós_RP) / Receita_Realizada</div>
-              <p className="doc-p">Extraído do RGF Anexo 05 (Demonstrativo da Disponibilidade de Caixa) do período mais recente entregue pelo município. O componente RPPS é subtraído por ter caixa vinculado de uso restrito, incluí-lo distorceria a liquidez real.</p>
+              <div className="doc-code doc-formula">Liquidez Líquida = (caixa livre após Restos a Pagar − caixa vinculado ao RPPS) / receita realizada</div>
+              <p className="doc-p">Esse indicador é extraído do RGF Anexo 05 mais recente entregue pelo município. A parcela do RPPS é retirada da conta porque esse caixa tem uso vinculado e, por isso, não representa liquidez livre para honrar contratos da prefeitura.</p>
               <div className="doc-h2">Curva de pontuação</div>
               <table className="doc-table">
-                <thead><tr><th>Lliq</th><th>Pontuação</th><th>Interpretação</th></tr></thead>
+                <thead><tr><th>Liquidez Líquida</th><th>Pontuação</th><th>Interpretação</th></tr></thead>
                 <tbody>
                   <tr><td>≥ 0,35</td><td>1,00</td><td>Folga de liquidez sólida</td></tr>
                   <tr><td>0,10 – 0,35</td><td>linear 0,60 → 1,00</td><td>Liquidez razoável</td></tr>
@@ -129,28 +129,28 @@ export default function DocsPage() {
                   <tr><td>&lt; −0,50</td><td>0,00 + flag</td><td>Anomalia, dado suspeito</td></tr>
                 </tbody>
               </table>
-              <div className="doc-h2">Por que DCL pós-RP e não Caixa Bruto</div>
-              <p className="doc-p">A versão anterior (v5.x) usava Saldo de Caixa (DCA) e Restos a Pagar (RREO Anexo 07) como variáveis independentes. Por construção contábil, esses dois indicadores são altamente correlacionados negativamente, o modelo penalizava duas vezes o mesmo fenômeno.</p>
-              <p className="doc-p">A fusão em Lliq via RGF Anexo 05 elimina a multicolinearidade e eleva a frequência de atualização de anual (DCA) para bimestral/semestral (RGF).</p>
+              <div className="doc-h2">Por que usar caixa líquido após Restos a Pagar</div>
+              <p className="doc-p">As versões anteriores tratavam caixa e Restos a Pagar como sinais separados. Na prática, isso fazia o modelo contar duas vezes o mesmo problema: quando as obrigações aumentam, a folga de caixa cai.</p>
+              <p className="doc-p">A metodologia atual junta essas informações em um único indicador de liquidez. Isso reduz ruído, evita dupla penalização e ainda permite atualização mais frequente com base no RGF.</p>
             </div>
 
             <div id="doc-outros" className={`doc-page ${docId === 'outros' ? 'active' : ''}`}>
               <div className="doc-h1">Demais indicadores</div>
-              <div className="doc-h2">Execução Orçamentária (Eorcam) — 15%</div>
-              <p className="doc-p">Mede se o município arrecada o que planejou. Usa média ponderada por recência (2020–2025). A zona saudável é 90–105%, excesso por verba extraordinária também é penalizado.</p>
-              <div className="doc-h2">Qualidade SICONFI (Qsiconfi) — 15%</div>
-              <p className="doc-p">Proporção de anos (2020–2025) em que o município entregou o RREO ao Tesouro. Dado ausente não é sinal neutro, equivale a rebaixamento automático.</p>
-              <div className="doc-h2">RP Crônicos (RPproc) — 15%</div>
-              <p className="doc-p">Contagem de anos em que rproc_pct &gt; 3%. Municípios com 4 ou mais anos crônicos têm classificação máxima travada em Risco Médio.</p>
+              <div className="doc-h2">Execução Orçamentária — 15%</div>
+              <p className="doc-p">Mede o quanto o município arrecada perto do que planejou. Usa média ponderada por recência entre 2020 e 2025. A faixa mais saudável fica entre 90% e 105%; valores muito acima disso também são penalizados, por indicarem receitas extraordinárias ou pouco previsíveis.</p>
+              <div className="doc-h2">Qualidade da entrega ao SICONFI — 15%</div>
+              <p className="doc-p">Mede a regularidade com que o município entregou o RREO ao Tesouro entre 2020 e 2025. Aqui, dado ausente não é neutro: falta de envio reduz a nota e também pode limitar a classificação final.</p>
+              <div className="doc-h2">Histórico de atrasos recorrentes — 15%</div>
+              <p className="doc-p">Conta quantos anos o município terminou com despesas liquidadas e não pagas acima de 3% da receita. Quando esse padrão aparece em 4 ou mais anos, a classificação máxima fica travada em Risco Médio.</p>
               <div className="doc-h2">Autonomia Tributária — 10%</div>
-              <p className="doc-p">Receita própria (IPTU, ISS, ITBI, taxas) como proporção da receita corrente. Municípios com autonomia abaixo de 8% da RCL recebem flag autonomia_critica, dependência total do FPM, que oscila 20–30% entre meses.</p>
-              <div className="doc-h2">Bloqueio Federal (Ccauc) — 10%</div>
-              <p className="doc-p">Único indicador verificado externamente pelo Governo Federal, não autodeclarado. Qualquer pendência grave zera a contribuição do componente.</p>
+              <p className="doc-p">Mede quanto da receita corrente vem de arrecadação própria, como IPTU, ISS, ITBI e taxas. Quando essa autonomia fica abaixo de 8% da receita corrente líquida, o município entra em faixa crítica de dependência de transferências, especialmente do FPM.</p>
+              <div className="doc-h2">Bloqueio Federal — 10%</div>
+              <p className="doc-p">É o único indicador verificado externamente pelo Governo Federal. Ele mede pendências que podem dificultar o recebimento de recursos federais. Quando há restrição grave, a contribuição desse componente vai a zero.</p>
             </div>
 
             <div id="doc-caps" className={`doc-page ${docId === 'caps' ? 'active' : ''}`}>
               <div className="doc-h1">Caps duros de classificação</div>
-              <div className="doc-callout">Caps duros são restrições independentes do score calculado. Um município pode ter score numérico alto e ainda assim ter sua classificação rebaixada.</div>
+              <div className="doc-callout">Caps duros são travas independentes do score numérico. Um município pode ter boa pontuação geral e, ainda assim, ser rebaixado se houver falta recorrente de dados ou histórico persistente de atrasos.</div>
               <div className="doc-h2">Cap de Transparência</div>
               <table className="doc-table">
                 <thead><tr><th>Anos entregues (de 6)</th><th>Cap máximo</th></tr></thead>
@@ -162,7 +162,7 @@ export default function DocsPage() {
                 </tbody>
               </table>
               <div className="doc-h2">Cap de Cronicidade</div>
-              <p className="doc-p">Municípios com n_anos_cronicos ≥ 4 têm classificação máxima travada em Risco Médio, independente do score numérico.</p>
+              <p className="doc-p">Municípios com 4 ou mais anos de atrasos recorrentes têm classificação máxima travada em Risco Médio, independentemente do score numérico.</p>
             </div>
 
             <div id="doc-ausentes" className={`doc-page ${docId === 'ausentes' ? 'active' : ''}`}>
@@ -171,12 +171,12 @@ export default function DocsPage() {
                 <thead><tr><th>Situação</th><th>Comportamento</th></tr></thead>
                 <tbody>
                   <tr><td>Município sem RREO (0 anos)</td><td>Score não calculado — Sem Dados</td></tr>
-                  <tr><td>RGF Anexo 05 fora da janela temporal</td><td>Confidence decay proporcional em Lliq + flag dado_defasado</td></tr>
-                  <tr><td>Apenas coluna pré-RPNP disponível</td><td>lliq_parcial = True + penalidade de 5 pts</td></tr>
-                  <tr><td>Lliq anômalo (&lt; −0,50)</td><td>Capping em −0,50 + flag dado_suspeito</td></tr>
-                  <tr><td>rproc_pct indisponível em algum ano</td><td>Ano excluído do cômputo de n_anos_cronicos</td></tr>
-                  <tr><td>Município ausente no CAUC</td><td>Pior caso (Ccauc = 1,0) — conservador</td></tr>
-                  <tr><td>DCA ausente</td><td>Contribuição = 0 — penaliza ausência</td></tr>
+                  <tr><td>RGF Anexo 05 fora da janela temporal</td><td>A contribuição da liquidez perde peso de forma proporcional e o caso fica sinalizado como dado defasado</td></tr>
+                  <tr><td>Apenas coluna pré-RPNP disponível</td><td>O sistema usa a versão parcial do indicador de liquidez e aplica penalidade de 5 pontos</td></tr>
+                  <tr><td>Liquidez Líquida anômala (&lt; −0,50)</td><td>O valor é limitado em −0,50 e sinalizado como dado suspeito</td></tr>
+                  <tr><td>Histórico de atrasos indisponível em algum ano</td><td>O ano fica fora da contagem de cronicidade</td></tr>
+                  <tr><td>Município ausente no CAUC</td><td>Aplica-se o pior cenário para bloqueio federal, de forma conservadora</td></tr>
+                  <tr><td>DCA ausente</td><td>O componente de autonomia recebe contribuição zero</td></tr>
                 </tbody>
               </table>
             </div>
