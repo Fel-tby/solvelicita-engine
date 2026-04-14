@@ -16,6 +16,7 @@ def test_imports_centrais_funcionam_com_caminhos_de_pacote():
     modulos = [
         "pipeline",
         "src.config.settings",
+        "src.jobs.pipeline_jobs",
         "src.collectors.municipios",
         "src.engine.solvency",
         "src.processors.dca_postprocessor",

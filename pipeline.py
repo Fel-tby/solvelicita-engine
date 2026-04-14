@@ -17,27 +17,20 @@ Regras para --uf ALL:
     - com collect e com --collectors: ALL real para as UFs oficiais do Nordeste
 """
 
-import subprocess
 import sys
 import time
 from pathlib import Path
 
+from src.jobs import pipeline_jobs
+
 ROOT = Path(__file__).resolve().parent
 
-from src.config.settings import build_runtime_env
-from src.collectors import cauc, dca, municipios, pncp, siconfi
-from src.engine import solvency
-from src.processors import dca_postprocessor, siconfi_postprocessor
-from src.utils.paths import get_paths
-from src.utils.supabase_sync import run as supabase_sync
-
-
-ETAPAS_VALIDAS = {"collect", "dbt", "process", "score", "sync"}
-ETAPAS_ORDEM = ["collect", "dbt", "process", "score", "sync"]
-COLETORES_VALIDOS = {"municipios", "cauc", "siconfi", "dca", "pncp"}
-COLETORES_ORDEM = ["municipios", "cauc", "siconfi", "dca", "pncp"]
-ALL_UFS_TOKEN = "ALL"
-ALL_UFS_NORDESTE = ["AL", "BA", "CE", "MA", "PB", "PE", "PI", "RN", "SE"]
+ETAPAS_VALIDAS = pipeline_jobs.ETAPAS_VALIDAS
+ETAPAS_ORDEM = pipeline_jobs.ETAPAS_ORDEM
+COLETORES_VALIDOS = pipeline_jobs.COLETORES_VALIDOS
+COLETORES_ORDEM = pipeline_jobs.COLETORES_ORDEM
+ALL_UFS_TOKEN = pipeline_jobs.ALL_UFS_TOKEN
+ALL_UFS_NORDESTE = pipeline_jobs.ALL_UFS_NORDESTE
 PIPELINE_VERSION = "v9.1"
 
 
@@ -147,197 +140,95 @@ def normalizar_coletores(raw: str | None) -> list[str] | None:
     return selecionados
 
 
+def get_paths(uf: str):
+    return pipeline_jobs.get_paths(uf)
+
+
 def coletores_execucao(uf: str, etapas: set[str], coletores: list[str] | None) -> list[str] | None:
-    if "collect" not in etapas:
-        return None
-    if uf == ALL_UFS_TOKEN and coletores is None:
-        return ["cauc"]
-    if coletores is None:
-        return list(COLETORES_ORDEM)
-    return list(coletores)
-
-
-def etapa_collect(mode: str, uf: str, *, coletores: list[str] | None = None) -> None:
-    print("\n" + "=" * 55)
-    print(f"  ETAPA: COLETA [{mode.upper()}] - {uf}")
-    print("=" * 55)
-
-    coletores_ativos = coletores or list(COLETORES_ORDEM)
-    etapas_coleta = []
-
-    if "municipios" in coletores_ativos:
-        etapas_coleta.append(("Municipios", lambda: municipios.run(uf=uf)))
-    if "cauc" in coletores_ativos:
-        etapas_coleta.append(("CAUC", lambda: cauc.run(uf=uf)))
-    if "siconfi" in coletores_ativos:
-        etapas_coleta.append((f"SICONFI [{mode}]", lambda: siconfi.run(mode=mode, uf=uf)))
-    if "dca" in coletores_ativos:
-        etapas_coleta.append((f"DCA [{mode}]", lambda: dca.run(mode=mode, uf=uf)))
-    if "pncp" in coletores_ativos:
-        etapas_coleta.append((f"PNCP [{mode}]", lambda: pncp.run(mode=mode, uf=uf)))
-
-    total = len(etapas_coleta)
-    for idx, (label, runner) in enumerate(etapas_coleta, start=1):
-        print(f"\n[{idx}/{total}] {label}...")
-        runner()
-
-
-def etapa_collect_cauc_incremental_all(ufs: list[str]) -> None:
-    print("\n" + "=" * 55)
-    print("  ETAPA: COLETA INCREMENTAL CAUC - ALL (LEGADO)")
-    print("=" * 55)
-
-    total = len(ufs)
-    for idx, uf in enumerate(ufs, start=1):
-        print(f"\n[{idx}/{total}] CAUC incremental - {uf}...")
-        get_paths(uf)
-        cauc.run(uf=uf)
-
-
-def etapa_collect_all(mode: str, ufs: list[str], *, coletores: list[str]) -> None:
-    total = len(ufs)
-    for idx, uf in enumerate(ufs, start=1):
-        print("\n" + "-" * 55)
-        print(f"  COLETA ALL [{idx}/{total}] - {uf}")
-        print("-" * 55)
-        get_paths(uf)
-        etapa_collect(mode, uf, coletores=coletores)
-
-
-def etapa_dbt(uf: str) -> None:
-    print("\n" + "=" * 55)
-    print(f"  ETAPA: DBT TRANSFORM - {uf}")
-    print("=" * 55)
-
-    print("\n[1/1] Rodando modelos do dbt no BigQuery (via venv_dbt)...")
-
-    import os
-    import platform
-
-    if platform.system() == "Windows":
-        dbt_exe = ROOT / "venv_dbt" / "Scripts" / "dbt.exe"
-    else:
-        dbt_exe = ROOT / "venv_dbt" / "bin" / "dbt"
-
-    if not dbt_exe.exists():
-        print(f"  Aviso: executavel dbt nao encontrado em: {dbt_exe}")
-        sys.exit(1)
-
-    env = build_runtime_env(os.environ.copy())
-
-    res = subprocess.run([str(dbt_exe), "run"], cwd=str(ROOT / "dbt"), env=env)
-    if res.returncode != 0:
-        print("  Aviso: erro na execucao do dbt.")
-        sys.exit(res.returncode)
-
-
-def etapa_process(uf: str) -> None:
-    print("\n" + "=" * 55)
-    print(f"  ETAPA: POSTPROCESSORS BigQuery - {uf}")
-    print("=" * 55)
-
-    print("\n[1/2] SICONFI postprocessor...")
-    siconfi_postprocessor.run(uf=uf)
-
-    print("\n[2/2] DCA postprocessor...")
-    dca_postprocessor.run(uf=uf)
-
-
-def etapa_score(uf: str, mode: str | None = None) -> None:
-    print("\n" + "=" * 55)
-    print(f"  ETAPA: SCORE - {uf}")
-    print("=" * 55)
-
-    print("\n[1/1] Solvency engine (source=bigquery)...")
-    solvency.run(
-        uf=uf,
-        source="bigquery",
-        strict_bigquery=True,
-        publish_snapshot=True,
-        run_type="pipeline",
-        pipeline_mode=mode,
-        pipeline_version=f"pipeline.py {PIPELINE_VERSION}",
+    result = pipeline_jobs.resolve_collectors_job(
+        pipeline_jobs.ResolveCollectorsInput(uf=uf, etapas=etapas, coletores=coletores)
     )
-
-
-def etapa_sync(uf: str) -> None:
-    print("\n" + "=" * 55)
-    print(f"  ETAPA: SYNC - Supabase - {uf}")
-    print("=" * 55)
-
-    print("\n[1/1] Sincronizando com Supabase...")
-    supabase_sync(uf=uf)
+    return result.coletores
 
 
 def descobrir_ufs_presentes(*, for_sync_only: bool = False) -> list[str]:
-    if for_sync_only:
-        base = ROOT / "data" / "outputs"
-        ufs = []
-        if base.exists():
-            for item in sorted(base.iterdir()):
-                if not item.is_dir():
-                    continue
-                uf = item.name.upper()
-                score_csv = item / f"score_municipios_{uf.lower()}_pncp.csv"
-                if score_csv.exists():
-                    ufs.append(uf)
-        return ufs
-
-    base = ROOT / "data" / "processed"
-    ufs = []
-    if base.exists():
-        for item in sorted(base.iterdir()):
-            if not item.is_dir():
-                continue
-            uf = item.name.upper()
-            tabela_mun = item / f"municipios_{uf.lower()}_tabela.csv"
-            if tabela_mun.exists():
-                ufs.append(uf)
-    return ufs
+    result = pipeline_jobs.discover_present_ufs_job(
+        pipeline_jobs.DiscoverPresentUfsInput(root=ROOT, for_sync_only=for_sync_only)
+    )
+    return result.ufs
 
 
 def filtrar_ufs_all(ufs: list[str]) -> list[str]:
-    """ALL executa apenas as UFs oficiais do Nordeste."""
-    return [uf for uf in ALL_UFS_NORDESTE if uf in set(ufs)]
+    return pipeline_jobs.filter_ufs_all(ufs)
 
 
-def validar_uf_all(mode: str, etapas: set[str], coletores: list[str] | None = None) -> tuple[list[str], bool]:
-    permitido_sem_collect = {"process", "score", "sync"}
-    permitido_com_collect_legado = {"collect", "dbt", "process", "score", "sync"}
-
-    if "collect" in etapas:
-        if mode != "incremental":
-            print("  Erro: com --uf ALL + collect, o modo deve ser incremental.")
-            sys.exit(1)
-
-        if coletores is None:
-            if etapas != permitido_com_collect_legado:
-                print(
-                    "  Erro: com --uf ALL + collect sem --collectors, o fluxo permitido "
-                    "permanece exatamente collect,dbt,process,score,sync."
-                )
-                sys.exit(1)
-            return list(ALL_UFS_NORDESTE), True
-
-        return list(ALL_UFS_NORDESTE), False
-
-    if not etapas.issubset(permitido_sem_collect):
-        print(
-            "  Erro: --uf ALL sem collect aceita apenas etapas entre "
-            "process,score,sync."
+def validar_uf_all(
+    mode: str,
+    etapas: set[str],
+    coletores: list[str] | None = None,
+) -> tuple[list[str], bool]:
+    try:
+        result = pipeline_jobs.validate_all_uf_job(
+            pipeline_jobs.ValidateAllUfInput(
+                mode=mode,
+                etapas=etapas,
+                coletores=coletores,
+                root=ROOT,
+            )
         )
+    except ValueError as exc:
+        print(str(exc))
+        sys.exit(1)
+    return result.ufs, result.all_legado
+
+
+def etapa_collect(mode: str, uf: str, *, coletores: list[str] | None = None):
+    return pipeline_jobs.run_collect_job(
+        pipeline_jobs.CollectJobInput(mode=mode, uf=uf, coletores=coletores)
+    )
+
+
+def etapa_collect_cauc_incremental_all(ufs: list[str]):
+    return pipeline_jobs.run_collect_legacy_all_job(
+        pipeline_jobs.CollectLegacyAllJobInput(ufs=list(ufs))
+    )
+
+
+def etapa_collect_all(mode: str, ufs: list[str], *, coletores: list[str]):
+    return pipeline_jobs.run_collect_all_job(
+        pipeline_jobs.CollectAllJobInput(mode=mode, ufs=list(ufs), coletores=list(coletores))
+    )
+
+
+def etapa_dbt(uf: str):
+    try:
+        return pipeline_jobs.run_dbt_job(
+            pipeline_jobs.DbtJobInput(uf=uf, root=ROOT)
+        )
+    except FileNotFoundError as exc:
+        print(f"  Aviso: {exc}")
+        sys.exit(1)
+    except RuntimeError:
+        print("  Aviso: erro na execucao do dbt.")
         sys.exit(1)
 
-    ufs = descobrir_ufs_presentes(for_sync_only=(etapas == {"sync"}))
-    ufs = filtrar_ufs_all(ufs)
 
-    if not ufs:
-        print(
-            "  Erro: nenhuma UF do Nordeste foi encontrada no workspace para --uf ALL."
+def etapa_process(uf: str):
+    return pipeline_jobs.run_process_job(pipeline_jobs.ProcessJobInput(uf=uf))
+
+
+def etapa_score(uf: str, mode: str | None = None):
+    return pipeline_jobs.run_score_job(
+        pipeline_jobs.ScoreJobInput(
+            uf=uf,
+            pipeline_version=f"pipeline.py {PIPELINE_VERSION}",
+            mode=mode,
         )
-        sys.exit(1)
+    )
 
-    return ufs, False
+
+def etapa_sync(uf: str):
+    return pipeline_jobs.run_sync_job(pipeline_jobs.SyncJobInput(uf=uf))
 
 
 def main() -> None:
@@ -378,9 +269,6 @@ def main() -> None:
     if uf == ALL_UFS_TOKEN:
         ufs_all, all_legado = validar_uf_all(mode, etapas, coletores)
 
-    if uf != ALL_UFS_TOKEN:
-        get_paths(uf)
-
     etapas_str = " -> ".join(e for e in ETAPAS_ORDEM if e in etapas)
     alvo_str = ", ".join(ufs_all) if ufs_all else uf
     coletores_resolvidos = coletores_execucao(uf, etapas, coletores)
@@ -402,51 +290,40 @@ def main() -> None:
         input("  Pressione Enter para iniciar ou Ctrl+C para cancelar...")
 
     t0 = time.time()
+    request = pipeline_jobs.PipelineRunInput(
+        uf=uf,
+        mode=mode,
+        etapas=set(etapas),
+        coletores=coletores,
+        root=ROOT,
+    )
+    deps = pipeline_jobs.PipelineExecutionDeps(
+        prepare_paths=get_paths,
+        run_collect=lambda mode_value, uf_value, coletores_value=None: etapa_collect(
+            mode_value,
+            uf_value,
+            coletores=coletores_value,
+        ),
+        run_collect_legacy_all=etapa_collect_cauc_incremental_all,
+        run_collect_all=lambda mode_value, ufs_value, coletores_value: etapa_collect_all(
+            mode_value,
+            ufs_value,
+            coletores=coletores_value,
+        ),
+        run_dbt=etapa_dbt,
+        run_process=etapa_process,
+        run_score=etapa_score,
+        run_sync=etapa_sync,
+    )
 
     try:
-        if uf == ALL_UFS_TOKEN:
-            assert ufs_all is not None
-
-            if "collect" in etapas:
-                if all_legado:
-                    etapa_collect_cauc_incremental_all(ufs_all)
-                else:
-                    assert coletores_resolvidos is not None
-                    etapa_collect_all(mode, ufs_all, coletores=coletores_resolvidos)
-
-            if "dbt" in etapas:
-                etapa_dbt("ALL")
-
-            if "process" in etapas:
-                for uf_item in ufs_all:
-                    etapa_process(uf_item)
-
-            if "score" in etapas:
-                for uf_item in ufs_all:
-                    etapa_score(uf_item, mode=mode)
-
-            if "sync" in etapas:
-                for uf_item in ufs_all:
-                    etapa_sync(uf_item)
-        else:
-            if "collect" in etapas:
-                etapa_collect(mode, uf, coletores=coletores_resolvidos)
-
-            if "dbt" in etapas:
-                etapa_dbt(uf)
-
-            if "process" in etapas:
-                etapa_process(uf)
-
-            if "score" in etapas:
-                etapa_score(uf, mode=mode)
-
-            if "sync" in etapas:
-                etapa_sync(uf)
-
+        pipeline_jobs.execute_pipeline_run(request, deps)
     except KeyboardInterrupt:
         print("\n\n  Pipeline interrompido pelo usuario.")
         sys.exit(0)
+    except ValueError as exc:
+        print(str(exc))
+        sys.exit(1)
 
     elapsed = time.time() - t0
     print()
