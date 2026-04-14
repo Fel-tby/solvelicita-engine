@@ -6,7 +6,7 @@ Nota: scaixa foi incorporado ao Lliq via RGF Anexo 05 — não calculado aqui.
 """
 import pandas as pd
 import numpy as np
-from src.utils.paths import get_paths
+from src.utils.paths import get_artifact_path
 from src.scorers import config as cfg_module
 from src.scorers.config import LIMIAR_AUTONOMIA_CRIT
 
@@ -43,13 +43,12 @@ def carregar_dca(municipios: pd.DataFrame, uf: str = "PB") -> pd.DataFrame:
     DataFrame com colunas:
         cod_ibge, autonomia_media, autonomia_norm, contrib_autonomia
     """
-    pesos   = cfg_module.get_pesos(uf)
-    paths   = get_paths(uf)
-    caminho = paths["processed"] / f"dca_indicadores_{uf.lower()}.csv"
+    pesos = cfg_module.get_pesos(uf)
+    caminho = get_artifact_path(uf, "dca_indicadores")
 
     if not caminho.exists():
         raise FileNotFoundError(
-            f"dca_indicadores_{uf.lower()}.csv não encontrado em {paths['processed']}.\n"
+            f"{caminho.name} nao encontrado em {caminho.parent}.\n"
             "Execute src/collectors/dca.py primeiro."
         )
 

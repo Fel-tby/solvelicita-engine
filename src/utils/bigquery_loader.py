@@ -11,17 +11,10 @@ from uuid import uuid4
 
 import pandas as pd
 
-from src.config.settings import PROJECT_ROOT, get_bigquery_settings
+from src.config.settings import get_bigquery_settings
+from src.utils.paths import get_bigquery_csv_fallback_paths
 
 logger = logging.getLogger(__name__)
-
-_ROOT = PROJECT_ROOT
-
-_CSV_FALLBACK: dict[str, str] = {
-    "mart_indicadores_municipios": "data/processed/PB/mart_indicadores_pb.csv",
-    "mart_pncp_municipios": "data/outputs/PB/score_municipios_pb_pncp.csv",
-    "score_municipios": "data/outputs/PB/score_municipios_pb.csv",
-}
 
 _client = None
 _BQ_AVAILABLE = None
@@ -545,24 +538,22 @@ def read_intermediate(table: str, uf: str | None = None, *, strict: bool = False
 
 
 def _read_mart_csv_fallback(table: str, uf: str | None) -> pd.DataFrame:
-    rel_path = _CSV_FALLBACK.get(table)
-    if not rel_path:
+    candidates = get_bigquery_csv_fallback_paths(table, uf=uf)
+    if not candidates:
         logger.warning(
             "[BQ stub] Sem fallback CSV para tabela '%s'. Retornando DataFrame vazio.",
             table,
         )
         return pd.DataFrame()
 
-    if uf and uf.upper() != "PB":
-        rel_path = rel_path.replace("/PB/", f"/{uf.upper()}/")
+    for full_path in candidates:
+        if full_path.exists():
+            logger.info("[BQ stub] read_mart via CSV local: %s", full_path.name)
+            return pd.read_csv(full_path, dtype={"cod_ibge": str})
 
-    full_path = _ROOT / rel_path
-    if not full_path.exists():
-        logger.warning(
-            "[BQ stub] Fallback CSV nao encontrado: %s. Retornando DataFrame vazio.",
-            full_path,
-        )
-        return pd.DataFrame()
-
-    logger.info("[BQ stub] read_mart via CSV local: %s", full_path.name)
-    return pd.read_csv(full_path, dtype={"cod_ibge": str})
+    logger.warning(
+        "[BQ stub] Fallback CSV nao encontrado para '%s': %s. Retornando DataFrame vazio.",
+        table,
+        ", ".join(str(path) for path in candidates),
+    )
+    return pd.DataFrame()

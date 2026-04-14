@@ -104,10 +104,11 @@ def test_run_publica_com_merge_seguro(monkeypatch):
     def fake_get(*args, **kwargs):
         return DummyResponse()
 
-    def fake_get_paths(uf: str):
+    def fake_get_artifact_path(uf: str, artifact_key: str, **_kwargs):
+        assert artifact_key == "municipios_tabela"
         processed = temp_root / "processed" / uf.upper()
         processed.mkdir(parents=True, exist_ok=True)
-        return {"processed": processed}
+        return processed / f"municipios_{uf.lower()}_tabela.csv"
 
     def fake_publish_raw_merge(df, table, uf, key_cols):
         published["df"] = df.copy()
@@ -116,7 +117,7 @@ def test_run_publica_com_merge_seguro(monkeypatch):
         published["key_cols"] = key_cols
 
     monkeypatch.setattr(municipios.httpx, "get", fake_get)
-    monkeypatch.setattr(municipios, "get_paths", fake_get_paths)
+    monkeypatch.setattr(municipios, "get_artifact_path", fake_get_artifact_path)
     monkeypatch.setattr(municipios, "publish_raw_merge", fake_publish_raw_merge)
 
     try:
@@ -171,13 +172,14 @@ def test_carregar_municipios_faz_fallback_para_api_quando_csv_nao_existe(monkeyp
     def fake_get(*args, **kwargs):
         return DummyResponse()
 
-    def fake_get_paths(uf: str):
+    def fake_get_artifact_path(uf: str, artifact_key: str, **_kwargs):
+        assert artifact_key == "municipios_tabela"
         processed = temp_root / "processed" / uf.upper()
         processed.mkdir(parents=True, exist_ok=True)
-        return {"processed": processed}
+        return processed / f"municipios_{uf.lower()}_tabela.csv"
 
     monkeypatch.setattr(municipios.httpx, "get", fake_get)
-    monkeypatch.setattr(municipios, "get_paths", fake_get_paths)
+    monkeypatch.setattr(municipios, "get_artifact_path", fake_get_artifact_path)
 
     try:
         result = municipios.carregar_municipios("SE", prefer_local=True, persist_local=False)

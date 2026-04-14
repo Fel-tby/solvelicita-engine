@@ -28,15 +28,16 @@ def test_dca_postprocessor_uses_loader_for_query_and_merge(monkeypatch):
     def fake_merge_dataframe_to_table(df, **kwargs):
         calls["merge"] = (df.copy(), kwargs)
 
-    def fake_get_paths(uf: str):
+    def fake_get_artifact_path(uf: str, artifact_key: str, **_kwargs):
+        assert artifact_key == "dca_indicadores"
         processed = temp_root / "processed" / uf.upper()
         processed.mkdir(parents=True, exist_ok=True)
-        return {"processed": processed}
+        return processed / f"dca_indicadores_{uf.lower()}.csv"
 
     monkeypatch.setattr(dca_postprocessor, "get_bigquery_project", fake_project)
     monkeypatch.setattr(dca_postprocessor, "query_to_dataframe", fake_query_to_dataframe)
     monkeypatch.setattr(dca_postprocessor, "merge_dataframe_to_table", fake_merge_dataframe_to_table)
-    monkeypatch.setattr(dca_postprocessor, "get_paths", fake_get_paths)
+    monkeypatch.setattr(dca_postprocessor, "get_artifact_path", fake_get_artifact_path)
 
     try:
         dca_postprocessor.run("SE")
@@ -100,15 +101,19 @@ def test_siconfi_postprocessor_uses_loader_for_query_and_merge(monkeypatch):
     def fake_merge_dataframe_to_table(df, **kwargs):
         calls["merge"] = (df.copy(), kwargs)
 
-    def fake_get_paths(uf: str):
+    def fake_get_artifact_path(uf: str, artifact_key: str, **_kwargs):
         processed = temp_root / "processed" / uf.upper()
         processed.mkdir(parents=True, exist_ok=True)
-        return {"processed": processed}
+        filenames = {
+            "siconfi_indicadores": f"siconfi_indicadores_{uf.lower()}.csv",
+            "siconfi_postprocessed": f"siconfi_postprocessed_{uf.lower()}.csv",
+        }
+        return processed / filenames[artifact_key]
 
     monkeypatch.setattr(siconfi_postprocessor, "get_bigquery_project", fake_project)
     monkeypatch.setattr(siconfi_postprocessor, "query_to_dataframe", fake_query_to_dataframe)
     monkeypatch.setattr(siconfi_postprocessor, "merge_dataframe_to_table", fake_merge_dataframe_to_table)
-    monkeypatch.setattr(siconfi_postprocessor, "get_paths", fake_get_paths)
+    monkeypatch.setattr(siconfi_postprocessor, "get_artifact_path", fake_get_artifact_path)
 
     try:
         siconfi_postprocessor.run("SE")

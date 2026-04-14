@@ -18,7 +18,7 @@ if __package__ in (None, ""):
     sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
 
 from src.utils.bigquery_loader import publish_raw_merge
-from src.utils.paths import get_paths
+from src.utils.paths import get_artifact_path
 
 
 REQUIRED_COLUMNS = ["cod_ibge", "uf", "ente", "populacao"]
@@ -94,8 +94,7 @@ def carregar_municipios(
     busca direto na API do SICONFI e opcionalmente persiste o artefato local.
     """
     uf = uf.upper()
-    paths = get_paths(uf)
-    out = paths["processed"] / f"municipios_{uf.lower()}_tabela.csv"
+    out = get_artifact_path(uf, "municipios_tabela")
 
     if prefer_local and out.exists():
         df_local = pd.read_csv(out, dtype={"cod_ibge": str})

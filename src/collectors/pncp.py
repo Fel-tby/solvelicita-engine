@@ -30,7 +30,7 @@ logging.getLogger("httpcore").setLevel(logging.WARNING)
 if __package__ in (None, ""):
     sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
 
-from src.utils.paths import get_paths
+from src.utils.paths import get_artifact_path
 from src.utils.bigquery_loader import upload_raw
 
 BASE_URL = "https://pncp.gov.br/api/consulta/v1/contratacoes/publicacao"
@@ -356,10 +356,9 @@ def run(mode: str = "full", uf: str = "PB") -> None:
     """
     uf    = uf.upper()
     hoje  = date.today()
-    paths = get_paths(uf)
 
     # Primário — nova estrutura UF subfolder
-    snap_jsonl_novo = paths["raw_pncp"] / f"pncp_parcial_{uf.lower()}.jsonl"
+    snap_jsonl_novo = get_artifact_path(uf, "pncp_checkpoint")
 
     if mode == "full":
         data_inicio = DATA_INICIO_FULL

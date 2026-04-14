@@ -14,7 +14,7 @@ pd.set_option("future.no_silent_downcasting", True)
 if __package__ in (None, ""):
     sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
 
-from src.utils.paths import get_paths
+from src.utils.paths import get_artifact_path
 from src.scorers import config as cfg_module
 from src.scorers.config import N_ANOS_CRONICOS_CAP_MEDIO, N_ANOS
 from src.scorers.lliq_scorer import calcular as calcular_lliq, pontuar_lliq
@@ -31,12 +31,9 @@ VERSION = "v7.0"
 # Carga CSV (legado)
 
 def _carregar_csv(uf: str) -> pd.DataFrame:
-    paths = get_paths(uf)
-    u = uf.lower()
-
-    siconfi_path = paths["processed"] / f"siconfi_indicadores_{u}.csv"
-    cauc_path    = paths["processed"] / f"cauc_situacao_{u}.csv"
-    mu_path      = paths["processed"] / f"municipios_{u}_tabela.csv"
+    siconfi_path = get_artifact_path(uf, "siconfi_indicadores")
+    cauc_path = get_artifact_path(uf, "cauc_situacao")
+    mu_path = get_artifact_path(uf, "municipios_tabela")
 
     for path, label in [(siconfi_path, "SICONFI"), (cauc_path, "CAUC"), (mu_path, "Municípios")]:
         if not path.exists():
@@ -163,14 +160,13 @@ def _carregar_bq(uf: str, *, strict_bigquery: bool = False) -> pd.DataFrame:
 
     print(f"  {len(df)} municípios base carregados e cruzados")
 
-    # Exportação Local (Audit) — salva mart carregado do BQ para conferência local
-    paths = get_paths(uf)
-    csv_mart = paths["processed"] / f"mart_indicadores_{uf.lower()}.csv"
+    # Exportacao local de auditoria do mart carregado do BQ.
+    csv_mart = get_artifact_path(uf, "mart_indicadores")
     df.to_csv(csv_mart, index=False)
     print(f"  💾 Mart exportado local: {csv_mart.name}")
 
     if "ccauc" in df.columns:
-        csv_cauc = paths["processed"] / f"cauc_situacao_{uf.lower()}.csv"
+        csv_cauc = get_artifact_path(uf, "cauc_situacao")
         df[["cod_ibge", "ccauc"]].to_csv(csv_cauc, index=False)
         print(f"  💾 CAUC exportado local: {csv_cauc.name}")
 
@@ -325,8 +321,7 @@ def run(
         .drop(columns="_ordem")
     )
 
-    paths   = get_paths(uf)
-    outfile = paths["outputs"] / f"score_municipios_{uf.lower()}_pncp.csv"
+    outfile = get_artifact_path(uf, "score_municipios_pncp")
     df_out.to_csv(outfile, index=False, encoding="utf-8-sig")
 
     print(f"\n✅ Score calculado : {df_out['score'].notna().sum()} municípios")

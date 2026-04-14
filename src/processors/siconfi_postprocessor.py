@@ -26,7 +26,7 @@ from src.utils.bigquery_loader import (
     merge_dataframe_to_table,
     query_to_dataframe,
 )
-from src.utils.paths import get_paths
+from src.utils.paths import get_artifact_path
 
 
 DATASET_I = "intermediate"
@@ -243,13 +243,12 @@ def run(uf: str = "PB") -> None:
     merged = df_eorcam_m.merge(df_lliq_m, on="cod_ibge", how="outer")
     _merge_bq(merged, uf=uf)
 
-    paths = get_paths(uf)
-    csv_anuais = paths["processed"] / f"siconfi_indicadores_{uf.lower()}.csv"
+    csv_anuais = get_artifact_path(uf, "siconfi_indicadores")
     df_anuais = _bq_anuais(uf=uf)
     df_anuais.to_csv(csv_anuais, index=False)
     print(f"  Exportado local: {csv_anuais.name}")
 
-    csv_resumo = paths["processed"] / f"siconfi_postprocessed_{uf.lower()}.csv"
+    csv_resumo = get_artifact_path(uf, "siconfi_postprocessed")
     merged.to_csv(csv_resumo, index=False)
     print(f"  Exportado local: {csv_resumo.name}")
 

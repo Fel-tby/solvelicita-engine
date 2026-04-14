@@ -14,7 +14,7 @@ if __package__ in (None, ""):
     sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
 
 from src.config.settings import get_supabase_settings
-from src.utils.paths import get_paths
+from src.utils.paths import get_artifact_path
 
 COLUNAS = {
     "cod_ibge": "cod_ibge", "ente": "ente", "populacao": "populacao",
@@ -95,10 +95,7 @@ def _preparar_registros(csv_path: Path, uf: str) -> list:
     return [_sanitizar(r) for r in registros]
 
 def run(uf: str = "PB") -> None:
-    paths = get_paths(uf)
-    u = uf.lower()
-
-    csv_path = paths["outputs"] / f"score_municipios_{u}_pncp.csv"
+    csv_path = get_artifact_path(uf, "score_municipios_pncp")
 
 
     if not csv_path.exists():

@@ -21,7 +21,7 @@ from src.utils.bigquery_loader import (
     merge_dataframe_to_table,
     query_to_dataframe,
 )
-from src.utils.paths import get_paths
+from src.utils.paths import get_artifact_path
 
 
 DATASET_I = "intermediate"
@@ -102,8 +102,7 @@ def run(uf: str = "PB") -> None:
     print("\n-- Fazendo MERGE em int_dca_postprocessed...")
     _merge_bq(df_m, uf=uf)
 
-    paths = get_paths(uf)
-    csv_path = paths["processed"] / f"dca_indicadores_{uf.lower()}.csv"
+    csv_path = get_artifact_path(uf, "dca_indicadores")
     df_m.to_csv(csv_path, index=False)
     print(f"  Exportado local: {csv_path.name}")
 

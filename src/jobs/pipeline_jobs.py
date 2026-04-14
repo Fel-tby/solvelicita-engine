@@ -11,7 +11,7 @@ from src.config.settings import build_runtime_env
 from src.collectors import cauc, dca, municipios, pncp, siconfi
 from src.engine import solvency
 from src.processors import dca_postprocessor, siconfi_postprocessor
-from src.utils.paths import get_paths
+from src.utils.paths import find_ufs_with_artifact, get_paths
 from src.utils.supabase_sync import run as supabase_sync
 
 ETAPAS_VALIDAS = {"collect", "dbt", "process", "score", "sync"}
@@ -323,29 +323,13 @@ def run_sync_job(request: SyncJobInput) -> SyncJobResult:
 
 def discover_present_ufs_job(request: DiscoverPresentUfsInput) -> DiscoverPresentUfsResult:
     if request.for_sync_only:
-        base = request.root / "data" / "outputs"
-        ufs = []
-        if base.exists():
-            for item in sorted(base.iterdir()):
-                if not item.is_dir():
-                    continue
-                uf = item.name.upper()
-                score_csv = item / f"score_municipios_{uf.lower()}_pncp.csv"
-                if score_csv.exists():
-                    ufs.append(uf)
-        return DiscoverPresentUfsResult(ufs=ufs)
+        return DiscoverPresentUfsResult(
+            ufs=find_ufs_with_artifact("score_municipios_pncp", root=request.root)
+        )
 
-    base = request.root / "data" / "processed"
-    ufs = []
-    if base.exists():
-        for item in sorted(base.iterdir()):
-            if not item.is_dir():
-                continue
-            uf = item.name.upper()
-            tabela_mun = item / f"municipios_{uf.lower()}_tabela.csv"
-            if tabela_mun.exists():
-                ufs.append(uf)
-    return DiscoverPresentUfsResult(ufs=ufs)
+    return DiscoverPresentUfsResult(
+        ufs=find_ufs_with_artifact("municipios_tabela", root=request.root)
+    )
 
 
 def filter_ufs_all(ufs: list[str]) -> list[str]:
