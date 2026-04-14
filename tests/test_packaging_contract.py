@@ -15,6 +15,7 @@ def test_pyproject_declara_pacote_e_entrypoint_do_pipeline():
 def test_imports_centrais_funcionam_com_caminhos_de_pacote():
     modulos = [
         "pipeline",
+        "src.config.settings",
         "src.collectors.municipios",
         "src.engine.solvency",
         "src.processors.dca_postprocessor",

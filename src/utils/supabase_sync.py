@@ -4,21 +4,17 @@ src/utils/supabase_sync.py — v2.0
 
 import json
 import math
-import os
 import sys
 from pathlib import Path
 
 import pandas as pd
-from dotenv import load_dotenv
 from supabase import create_client, Client
 
 if __package__ in (None, ""):
     sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
 
+from src.config.settings import get_supabase_settings
 from src.utils.paths import get_paths
-
-BASE_DIR = Path(__file__).resolve().parent.parent.parent
-load_dotenv(BASE_DIR / ".env")
 
 COLUNAS = {
     "cod_ibge": "cod_ibge", "ente": "ente", "populacao": "populacao",
@@ -57,11 +53,10 @@ COLUNAS_BOOLEAN = {
 }
 
 def _conectar() -> Client:
-    url = os.environ.get("SUPABASE_URL")
-    key = os.environ.get("SUPABASE_KEY")
-    if not url or not key:
-        raise EnvironmentError("SUPABASE_URL e SUPABASE_KEY precisam estar no .env")
-    return create_client(url, key)
+    cfg = get_supabase_settings()
+    if not cfg.is_configured:
+        raise EnvironmentError("SUPABASE_URL e SUPABASE_KEY precisam estar configurados no ambiente.")
+    return create_client(cfg.url, cfg.key)
 
 def _sanitizar(rec: dict) -> dict:
     NAN_STRINGS = {"NaN", "nan", "None", "none", "inf", "-inf"}

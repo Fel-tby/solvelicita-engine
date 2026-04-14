@@ -24,6 +24,7 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent
 
+from src.config.settings import build_runtime_env
 from src.collectors import cauc, dca, municipios, pncp, siconfi
 from src.engine import solvency
 from src.processors import dca_postprocessor, siconfi_postprocessor
@@ -222,10 +223,7 @@ def etapa_dbt(uf: str) -> None:
         print(f"  Aviso: executavel dbt nao encontrado em: {dbt_exe}")
         sys.exit(1)
 
-    env = os.environ.copy()
-    sa_path = env.get("GCP_SA_KEY_PATH")
-    if sa_path and not Path(sa_path).is_absolute():
-        env["GCP_SA_KEY_PATH"] = str((ROOT / sa_path).resolve())
+    env = build_runtime_env(os.environ.copy())
 
     res = subprocess.run([str(dbt_exe), "run"], cwd=str(ROOT / "dbt"), env=env)
     if res.returncode != 0:

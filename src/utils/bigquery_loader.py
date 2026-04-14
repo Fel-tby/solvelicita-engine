@@ -4,20 +4,18 @@ bigquery_loader.py - Interface unica de leitura/escrita no BigQuery.
 
 import json
 import logging
-import os
 import re
 import time
 from pathlib import Path
 from uuid import uuid4
 
 import pandas as pd
-from dotenv import load_dotenv
 
-load_dotenv()
+from src.config.settings import PROJECT_ROOT, get_bigquery_settings
 
 logger = logging.getLogger(__name__)
 
-_ROOT = Path(__file__).resolve().parent.parent.parent
+_ROOT = PROJECT_ROOT
 
 _CSV_FALLBACK: dict[str, str] = {
     "mart_indicadores_municipios": "data/processed/PB/mart_indicadores_pb.csv",
@@ -42,11 +40,12 @@ def _check_bq_available() -> bool:
 
 
 def _cfg() -> dict:
+    cfg = get_bigquery_settings()
     return {
-        "project": os.getenv("GCP_PROJECT_ID", "solvelicita"),
-        "sa_path": os.getenv("GCP_SA_KEY_PATH", ""),
-        "dataset": os.getenv("BQ_DATASET", "raw"),
-        "enabled": os.getenv("BQ_ENABLED", "false").lower() == "true",
+        "project": cfg.project_id,
+        "sa_path": cfg.resolved_sa_key_path_str,
+        "dataset": cfg.dataset,
+        "enabled": cfg.enabled,
     }
 
 
