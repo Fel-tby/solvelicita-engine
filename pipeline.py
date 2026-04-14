@@ -23,8 +23,6 @@ import time
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent
-sys.path.insert(0, str(ROOT))
-sys.path.insert(0, str(ROOT / "src"))
 
 from src.collectors import cauc, dca, municipios, pncp, siconfi
 from src.engine import solvency

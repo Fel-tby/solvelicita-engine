@@ -23,9 +23,11 @@ import pandas as pd
 from datetime import date
 from pathlib import Path
 
-sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
-from collectors.municipios import carregar_municipios
-from utils.bigquery_loader import publish_raw_merge
+if __package__ in (None, ""):
+    sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
+
+from src.collectors.municipios import carregar_municipios
+from src.utils.bigquery_loader import publish_raw_merge
 
 logging.basicConfig(
     level=logging.INFO,

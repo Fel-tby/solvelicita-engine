@@ -1,0 +1,22 @@
+[build-system]
+requires = ["setuptools>=69", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "solvelicita"
+version = "0.1.0"
+description = "Motor analitico de risco fiscal e score de solvencia municipal."
+readme = "README.md"
+requires-python = ">=3.11"
+license = "AGPL-3.0-only"
+
+[project.scripts]
+solvelicita-pipeline = "pipeline:main"
+
+[tool.setuptools]
+py-modules = ["pipeline"]
+
+[tool.setuptools.packages.find]
+where = ["."]
+include = ["src", "src.*"]
+exclude = ["tests*", "frontend*", "dbt*", "venv*", "venv_dbt*", "cold_prospects_marketing*"]

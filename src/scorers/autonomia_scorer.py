@@ -4,15 +4,11 @@ Fonte: FINBRA/DCA
 
 Nota: scaixa foi incorporado ao Lliq via RGF Anexo 05 — não calculado aqui.
 """
-import sys
-from pathlib import Path
-sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
-
 import pandas as pd
 import numpy as np
-from utils.paths import get_paths
-from scorers import config as cfg_module
-from scorers.config import LIMIAR_AUTONOMIA_CRIT
+from src.utils.paths import get_paths
+from src.scorers import config as cfg_module
+from src.scorers.config import LIMIAR_AUTONOMIA_CRIT
 
 
 def _porte(pop: int) -> str:

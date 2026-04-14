@@ -14,9 +14,11 @@ from pathlib import Path
 import httpx
 import pandas as pd
 
-sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
-from utils.bigquery_loader import publish_raw_merge
-from utils.paths import get_paths
+if __package__ in (None, ""):
+    sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
+
+from src.utils.bigquery_loader import publish_raw_merge
+from src.utils.paths import get_paths
 
 
 REQUIRED_COLUMNS = ["cod_ibge", "uf", "ente", "populacao"]

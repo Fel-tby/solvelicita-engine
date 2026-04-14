@@ -1,10 +1,6 @@
-import sys
-from pathlib import Path
-sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
-
 import pandas as pd
-from scorers import config as cfg_module
-from scorers.config import ANOS_REF, LIMIAR_RPROC_CRONICO, N_ANOS_CRONICOS_CAP_MEDIO
+from src.scorers import config as cfg_module
+from src.scorers.config import ANOS_REF, LIMIAR_RPROC_CRONICO, N_ANOS_CRONICOS_CAP_MEDIO
 
 
 def pontuar_rproc_cronico(n: int) -> float:

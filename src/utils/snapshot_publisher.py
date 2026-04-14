@@ -5,19 +5,19 @@ Publicacao do resultado analitico final em camada historica no BigQuery.
 from __future__ import annotations
 
 import logging
-from datetime import date
+from datetime import date, datetime, timezone
 from uuid import uuid4
 
 import pandas as pd
 from google.cloud import bigquery
 
-from engine.classifier import ORDEM_SORT
-from utils.bigquery_loader import (
+from src.engine.classifier import ORDEM_SORT
+from src.utils.bigquery_loader import (
     get_bigquery_client,
     get_bigquery_project,
     is_bigquery_enabled,
 )
-from utils.temporal_infra import ensure_temporal_infra
+from src.utils.temporal_infra import ensure_temporal_infra
 
 logger = logging.getLogger(__name__)
 
@@ -103,6 +103,85 @@ SNAPSHOT_COLUMNS = [
     "alerta_dispensa",
 ]
 
+RUN_SCHEMA_SPEC = [
+    ("snapshot_run_id", "STRING", "REQUIRED"),
+    ("snapshot_date", "DATE", "REQUIRED"),
+    ("snapshot_ts", "TIMESTAMP", "REQUIRED"),
+    ("uf", "STRING", "REQUIRED"),
+    ("run_type", "STRING", "REQUIRED"),
+    ("pipeline_mode", "STRING", "NULLABLE"),
+    ("source_mode", "STRING", "NULLABLE"),
+    ("methodology_version", "STRING", "REQUIRED"),
+    ("pipeline_version", "STRING", "NULLABLE"),
+    ("status", "STRING", "REQUIRED"),
+    ("rows_written", "INT64", "NULLABLE"),
+    ("rows_scored", "INT64", "NULLABLE"),
+    ("rows_sem_dados", "INT64", "NULLABLE"),
+    ("score_avg", "FLOAT64", "NULLABLE"),
+    ("score_median", "FLOAT64", "NULLABLE"),
+    ("score_min", "FLOAT64", "NULLABLE"),
+    ("score_max", "FLOAT64", "NULLABLE"),
+    ("source_siconfi_ref", "STRING", "NULLABLE"),
+    ("source_dca_ref", "STRING", "NULLABLE"),
+    ("source_cauc_ref", "STRING", "NULLABLE"),
+    ("source_pncp_ref", "STRING", "NULLABLE"),
+    ("notes", "STRING", "NULLABLE"),
+]
+
+SNAPSHOT_SCHEMA_SPEC = [
+    ("snapshot_run_id", "STRING", "REQUIRED"),
+    ("snapshot_date", "DATE", "REQUIRED"),
+    ("snapshot_ts", "TIMESTAMP", "REQUIRED"),
+    ("uf", "STRING", "REQUIRED"),
+    ("cod_ibge", "STRING", "REQUIRED"),
+    ("ente", "STRING", "NULLABLE"),
+    ("populacao", "INT64", "NULLABLE"),
+    ("methodology_version", "STRING", "REQUIRED"),
+    ("score", "FLOAT64", "NULLABLE"),
+    ("classificacao", "STRING", "NULLABLE"),
+    ("score_base", "FLOAT64", "NULLABLE"),
+    ("score_bruto", "FLOAT64", "NULLABLE"),
+    ("anos_entregues", "INT64", "NULLABLE"),
+    ("n_anos_cronicos", "INT64", "NULLABLE"),
+    ("rproc_pct_atual", "FLOAT64", "NULLABLE"),
+    ("lliq_raw", "FLOAT64", "NULLABLE"),
+    ("eorcam_raw", "FLOAT64", "NULLABLE"),
+    ("qsiconfi", "FLOAT64", "NULLABLE"),
+    ("ccauc", "FLOAT64", "NULLABLE"),
+    ("autonomia_media", "FLOAT64", "NULLABLE"),
+    ("eorcam_norm", "FLOAT64", "NULLABLE"),
+    ("lliq_norm", "FLOAT64", "NULLABLE"),
+    ("rproc_norm", "FLOAT64", "NULLABLE"),
+    ("autonomia_norm", "FLOAT64", "NULLABLE"),
+    ("contrib_eorcam", "FLOAT64", "NULLABLE"),
+    ("contrib_lliq", "FLOAT64", "NULLABLE"),
+    ("contrib_qsiconfi", "FLOAT64", "NULLABLE"),
+    ("contrib_ccauc", "FLOAT64", "NULLABLE"),
+    ("contrib_autonomia", "FLOAT64", "NULLABLE"),
+    ("contrib_rproc", "FLOAT64", "NULLABLE"),
+    ("pen_lliq_parcial", "FLOAT64", "NULLABLE"),
+    ("pen_situacional", "FLOAT64", "NULLABLE"),
+    ("dias_atraso", "INT64", "NULLABLE"),
+    ("decay_fator", "FLOAT64", "NULLABLE"),
+    ("dado_suspeito", "BOOL", "NULLABLE"),
+    ("dado_suspeito_lliq", "BOOL", "NULLABLE"),
+    ("dado_defasado", "BOOL", "NULLABLE"),
+    ("lliq_parcial", "BOOL", "NULLABLE"),
+    ("autonomia_critica", "BOOL", "NULLABLE"),
+    ("n_graves", "INT64", "NULLABLE"),
+    ("n_moderadas", "INT64", "NULLABLE"),
+    ("n_leves", "INT64", "NULLABLE"),
+    ("pendencias", "STRING", "NULLABLE"),
+    ("pendencias_cauc_json", "STRING", "NULLABLE"),
+    ("n_licitacoes", "INT64", "NULLABLE"),
+    ("valor_homologado_total", "FLOAT64", "NULLABLE"),
+    ("n_dispensa", "INT64", "NULLABLE"),
+    ("valor_hom_dispensa", "FLOAT64", "NULLABLE"),
+    ("pct_dispensa", "FLOAT64", "NULLABLE"),
+    ("ano_ultima_licitacao", "INT64", "NULLABLE"),
+    ("alerta_dispensa", "BOOL", "NULLABLE"),
+]
+
 REQUIRED_COLUMNS = {
     "cod_ibge",
     "ente",
@@ -166,6 +245,44 @@ BOOL_COLUMNS = {
 
 TRUE_STRINGS = {"true", "1", "t", "yes", "y", "sim"}
 FALSE_STRINGS = {"false", "0", "f", "no", "n", "nao", "não"}
+
+
+def _schema_columns(schema_spec: list[tuple[str, ...]]) -> list[str]:
+    return [item[0] for item in schema_spec]
+
+
+def _schema_fields(schema_spec: list[tuple[str, ...]]) -> list[bigquery.SchemaField]:
+    fields = []
+    for item in schema_spec:
+        if len(item) == 2:
+            name, field_type = item
+            mode = "NULLABLE"
+        elif len(item) == 3:
+            name, field_type, mode = item
+        else:
+            raise ValueError(f"Schema spec invalido: {item!r}")
+        fields.append(bigquery.SchemaField(name, field_type, mode=mode))
+    return fields
+
+
+def _build_typed_select_list(
+    schema_spec: list[tuple[str, ...]],
+    *,
+    source_alias: str = "S",
+) -> str:
+    return ",\n        ".join(
+        [
+            f"CAST({source_alias}.{item[0]} AS {item[1]}) AS {item[0]}"
+            for item in schema_spec
+        ]
+    )
+
+
+if RUN_COLUMNS != _schema_columns(RUN_SCHEMA_SPEC):
+    raise RuntimeError("RUN_COLUMNS e RUN_SCHEMA_SPEC estao fora de sincronia.")
+
+if SNAPSHOT_COLUMNS != _schema_columns(SNAPSHOT_SCHEMA_SPEC):
+    raise RuntimeError("SNAPSHOT_COLUMNS e SNAPSHOT_SCHEMA_SPEC estao fora de sincronia.")
 
 
 def build_snapshot_run_id(uf: str, snapshot_date: date, run_type: str = "pipeline") -> str:
@@ -251,13 +368,13 @@ def _prepare_snapshot_rows(
     methodology_version: str,
     snapshot_run_id: str,
     snapshot_date: date,
-    snapshot_ts: pd.Timestamp,
+    snapshot_ts: datetime,
 ) -> pd.DataFrame:
     out = df.copy()
     out["cod_ibge"] = out["cod_ibge"].astype(str).str.zfill(7)
     out["uf"] = uf.upper()
     out["snapshot_run_id"] = snapshot_run_id
-    out["snapshot_date"] = pd.to_datetime(snapshot_date)
+    out["snapshot_date"] = snapshot_date
     out["snapshot_ts"] = snapshot_ts
     out["methodology_version"] = methodology_version
 
@@ -274,7 +391,7 @@ def _build_run_record(
     df_snapshot: pd.DataFrame,
     snapshot_run_id: str,
     snapshot_date: date,
-    snapshot_ts: pd.Timestamp,
+    snapshot_ts: datetime,
     uf: str,
     methodology_version: str,
     *,
@@ -291,7 +408,7 @@ def _build_run_record(
 
     record = {
         "snapshot_run_id": snapshot_run_id,
-        "snapshot_date": pd.to_datetime(snapshot_date),
+        "snapshot_date": snapshot_date,
         "snapshot_ts": snapshot_ts,
         "uf": uf.upper(),
         "run_type": run_type,
@@ -320,9 +437,12 @@ def _append_dataframe(
     client: bigquery.Client,
     table_ref: str,
     df: pd.DataFrame,
+    *,
+    schema_spec: list[tuple[str, str]] | None = None,
 ) -> None:
     job_config = bigquery.LoadJobConfig(
-        write_disposition=bigquery.WriteDisposition.WRITE_APPEND
+        write_disposition=bigquery.WriteDisposition.WRITE_APPEND,
+        schema=_schema_fields(schema_spec) if schema_spec else None,
     )
     client.load_table_from_dataframe(df, table_ref, job_config=job_config).result()
 
@@ -338,9 +458,11 @@ def _replace_daily_snapshot(
     temp_table = f"{project}.snapshots._tmp_municipios_risco_snapshot_{uuid4().hex[:8]}"
     target_table = f"{project}.snapshots.municipios_risco_snapshot"
     columns_csv = ", ".join(SNAPSHOT_COLUMNS)
+    typed_select_csv = _build_typed_select_list(SNAPSHOT_SCHEMA_SPEC)
 
     load_job_config = bigquery.LoadJobConfig(
-        write_disposition=bigquery.WriteDisposition.WRITE_TRUNCATE
+        write_disposition=bigquery.WriteDisposition.WRITE_TRUNCATE,
+        schema=_schema_fields(SNAPSHOT_SCHEMA_SPEC),
     )
     client.load_table_from_dataframe(df_snapshot, temp_table, job_config=load_job_config).result()
 
@@ -352,8 +474,9 @@ def _replace_daily_snapshot(
           AND snapshot_date = @snapshot_date;
 
         INSERT INTO `{target_table}` ({columns_csv})
-        SELECT {columns_csv}
-        FROM `{temp_table}`;
+        SELECT
+        {typed_select_csv}
+        FROM `{temp_table}` S;
         COMMIT TRANSACTION;
         """
         job_config = bigquery.QueryJobConfig(
@@ -388,7 +511,7 @@ def publish_snapshot(
     ensure_temporal_infra()
 
     snapshot_date = date.today()
-    snapshot_ts = pd.Timestamp.utcnow().tz_localize(None)
+    snapshot_ts = datetime.now(timezone.utc)
     snapshot_run_id = build_snapshot_run_id(uf, snapshot_date, run_type=run_type)
     df_snapshot = _prepare_snapshot_rows(
         df,
@@ -414,7 +537,12 @@ def publish_snapshot(
 
     client = get_bigquery_client()
     project = get_bigquery_project()
-    _append_dataframe(client, f"{project}.snapshots.snapshot_runs", df_run)
+    _append_dataframe(
+        client,
+        f"{project}.snapshots.snapshot_runs",
+        df_run,
+        schema_spec=RUN_SCHEMA_SPEC,
+    )
     _replace_daily_snapshot(
         client,
         project,

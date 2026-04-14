@@ -27,9 +27,11 @@ from calendar import monthrange
 logging.getLogger("httpx").setLevel(logging.WARNING)
 logging.getLogger("httpcore").setLevel(logging.WARNING)
 
-sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
-from utils.paths import get_paths
-from utils.bigquery_loader import upload_raw
+if __package__ in (None, ""):
+    sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
+
+from src.utils.paths import get_paths
+from src.utils.bigquery_loader import upload_raw
 
 BASE_URL = "https://pncp.gov.br/api/consulta/v1/contratacoes/publicacao"
 

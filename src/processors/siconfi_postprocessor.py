@@ -11,20 +11,22 @@ from pathlib import Path
 
 import pandas as pd
 
-sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
-from scorers.config import (
+if __package__ in (None, ""):
+    sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
+
+from src.scorers.config import (
     FIM_PERIODO_MES,
     JANELA_RGF_BIMESTRAL,
     JANELA_RGF_SEMESTRAL,
     LIMIAR_LLIQ_SUSPEITO,
     PESOS_ANO,
 )
-from utils.bigquery_loader import (
+from src.utils.bigquery_loader import (
     get_bigquery_project,
     merge_dataframe_to_table,
     query_to_dataframe,
 )
-from utils.paths import get_paths
+from src.utils.paths import get_paths
 
 
 DATASET_I = "intermediate"

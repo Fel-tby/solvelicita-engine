@@ -1,10 +1,6 @@
-import sys
-from pathlib import Path
-sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
-
 import pandas as pd
-from scorers import config as cfg_module
-from scorers.config import PENDENCIAS_GRAVES, PENDENCIAS_MODERADAS
+from src.scorers import config as cfg_module
+from src.scorers.config import PENDENCIAS_GRAVES, PENDENCIAS_MODERADAS
 
 
 def pontuar_ccauc(s) -> float:

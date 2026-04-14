@@ -1,10 +1,6 @@
-import sys
-from pathlib import Path
-sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
-
 import pandas as pd
-from scorers import config as cfg_module
-from scorers.config import ANOS_REF, PESOS_ANO
+from src.scorers import config as cfg_module
+from src.scorers.config import ANOS_REF, PESOS_ANO
 
 
 def pontuar_eorcam(x: float):

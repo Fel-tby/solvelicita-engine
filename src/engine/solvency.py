@@ -6,22 +6,24 @@ source="bigquery" → lê mart.mart_indicadores_municipios
 
 import sys
 from pathlib import Path
-sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 import pandas as pd
 import numpy as np
 pd.set_option("future.no_silent_downcasting", True)
 
-from utils.paths import get_paths
-from scorers import config as cfg_module
-from scorers.config import N_ANOS_CRONICOS_CAP_MEDIO, N_ANOS
-from scorers.lliq_scorer    import calcular as calcular_lliq,  pontuar_lliq
-from scorers.eorcam_scorer  import calcular as calcular_eorcam, pontuar_eorcam
-from scorers.qsiconfi_scorer import calcular as calcular_qsiconfi
-from scorers.cauc_scorer    import calcular as calcular_cauc
-from scorers.autonomia_scorer import carregar_dca as calcular_autonomia, pontuar_autonomia
-from scorers.rproc_scorer   import calcular as calcular_rproc, pontuar_rproc_cronico
-from engine.classifier      import classificar, ORDEM_SORT
+if __package__ in (None, ""):
+    sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
+
+from src.utils.paths import get_paths
+from src.scorers import config as cfg_module
+from src.scorers.config import N_ANOS_CRONICOS_CAP_MEDIO, N_ANOS
+from src.scorers.lliq_scorer import calcular as calcular_lliq, pontuar_lliq
+from src.scorers.eorcam_scorer import calcular as calcular_eorcam, pontuar_eorcam
+from src.scorers.qsiconfi_scorer import calcular as calcular_qsiconfi
+from src.scorers.cauc_scorer import calcular as calcular_cauc
+from src.scorers.autonomia_scorer import carregar_dca as calcular_autonomia, pontuar_autonomia
+from src.scorers.rproc_scorer import calcular as calcular_rproc, pontuar_rproc_cronico
+from src.engine.classifier import classificar, ORDEM_SORT
 
 VERSION = "v7.0"
 
@@ -84,7 +86,7 @@ def _carregar_csv(uf: str) -> pd.DataFrame:
 # Carga BigQuery (novo)
 
 def _carregar_bq(uf: str, *, strict_bigquery: bool = False) -> pd.DataFrame:
-    from utils.bigquery_loader import read_mart, read_intermediate
+    from src.utils.bigquery_loader import read_mart, read_intermediate
 
     pesos = cfg_module.get_pesos(uf)
 
@@ -333,7 +335,7 @@ def run(
 
     if publish_snapshot:
         try:
-            from utils.snapshot_publisher import publish_snapshot as publish_snapshot_fn
+            from src.utils.snapshot_publisher import publish_snapshot as publish_snapshot_fn
 
             publish_snapshot_fn(
                 df_out,

@@ -24,9 +24,11 @@ from pathlib import Path
 logging.getLogger("httpx").setLevel(logging.WARNING)
 logging.getLogger("httpcore").setLevel(logging.WARNING)
 
-sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
-from utils.paths import get_paths
-from utils.bigquery_loader import publish_raw_merge
+if __package__ in (None, ""):
+    sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
+
+from src.utils.paths import get_paths
+from src.utils.bigquery_loader import publish_raw_merge
 
 BASE_URL_SICONFI = "https://apidatalake.tesouro.gov.br/ords/siconfi/tt"
 MAX_CONCORRENCIA = 10

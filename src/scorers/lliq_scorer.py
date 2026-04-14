@@ -1,11 +1,7 @@
-import sys
-from pathlib import Path
-sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
-
 import pandas as pd
 from datetime import date
-from scorers import config as cfg_module
-from scorers.config import (
+from src.scorers import config as cfg_module
+from src.scorers.config import (
     ANOS_REF,
     LIMIAR_LLIQ_SUSPEITO,
     JANELA_RGF_BIMESTRAL,

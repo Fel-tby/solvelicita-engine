@@ -3,12 +3,8 @@ classifier.py — Classificação de risco e caps duros.
 Único arquivo do projeto onde ORDEM_RISCO e as regras de cap existem.
 Versão: 7.0
 """
-import sys
-from pathlib import Path
-sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
-
 import pandas as pd
-from scorers.config import LIMIARES_SCORE, N_ANOS_CRONICOS_CAP_MEDIO
+from src.scorers.config import LIMIARES_SCORE, N_ANOS_CRONICOS_CAP_MEDIO
 
 ORDEM_RISCO = ["🟢 Risco Baixo", "🟡 Risco Médio", "🔴 Risco Alto", "⛔ Crítico"]
 ORDEM_SORT  = {c: i for i, c in enumerate(ORDEM_RISCO + ["⚫ Sem Dados"])}

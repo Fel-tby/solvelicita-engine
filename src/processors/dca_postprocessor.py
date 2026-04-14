@@ -12,14 +12,16 @@ from pathlib import Path
 
 import pandas as pd
 
-sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
-from scorers.config import LIMIAR_AUTONOMIA_CRIT
-from utils.bigquery_loader import (
+if __package__ in (None, ""):
+    sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
+
+from src.scorers.config import LIMIAR_AUTONOMIA_CRIT
+from src.utils.bigquery_loader import (
     get_bigquery_project,
     merge_dataframe_to_table,
     query_to_dataframe,
 )
-from utils.paths import get_paths
+from src.utils.paths import get_paths
 
 
 DATASET_I = "intermediate"

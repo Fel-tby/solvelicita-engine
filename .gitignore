@@ -185,4 +185,6 @@ gcp-credentials.json
 # Instruções Internas Cline e Roadmap
 .clinerules/
 blocos.md
+blocos_refact.md
+plans/
 AGENTS.md

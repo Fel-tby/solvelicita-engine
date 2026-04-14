@@ -1,8 +1,8 @@
 import pandas as pd
 import pytest
 
-from engine import solvency
-from utils import bigquery_loader
+from src.engine import solvency
+from src.utils import bigquery_loader
 
 
 def test_read_mart_strict_raises_when_bigquery_is_unavailable(monkeypatch):
@@ -58,8 +58,8 @@ def test_carregar_bq_passes_strict_flag_to_loader(monkeypatch):
         calls.append(("intermediate", table, uf, strict))
         return pd.DataFrame(columns=["cod_ibge"])
 
-    monkeypatch.setattr("utils.bigquery_loader.read_mart", fake_read_mart)
-    monkeypatch.setattr("utils.bigquery_loader.read_intermediate", fake_read_intermediate)
+    monkeypatch.setattr("src.utils.bigquery_loader.read_mart", fake_read_mart)
+    monkeypatch.setattr("src.utils.bigquery_loader.read_intermediate", fake_read_intermediate)
 
     written = []
     monkeypatch.setattr(

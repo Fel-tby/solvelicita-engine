@@ -2,17 +2,20 @@
 src/utils/supabase_sync.py — v2.0
 """
 
+import json
+import math
+import os
 import sys
 from pathlib import Path
-sys.path.insert(0, str(Path(__file__).resolve().parent.parent))  # ← adicionar
-import os, json, math
+
 import pandas as pd
-import os, json, math
-import pandas as pd
-from pathlib import Path
 from dotenv import load_dotenv
 from supabase import create_client, Client
-from utils.paths import get_paths
+
+if __package__ in (None, ""):
+    sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
+
+from src.utils.paths import get_paths
 
 BASE_DIR = Path(__file__).resolve().parent.parent.parent
 load_dotenv(BASE_DIR / ".env")
