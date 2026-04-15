@@ -22,6 +22,7 @@ def test_imports_centrais_funcionam_com_caminhos_de_pacote():
         "src.processors.dca_postprocessor",
         "src.scorers.lliq_scorer",
         "src.utils.paths",
+        "src.utils.run_observability",
         "src.utils.supabase_sync",
     ]
 

@@ -31,16 +31,22 @@ def test_execute_pipeline_run_returns_explicit_result_for_single_uf():
     )
 
     assert isinstance(result, pipeline_jobs.PipelineRunResult)
+    assert result.run_id
+    assert result.status == "succeeded"
+    assert result.uf == "PB"
+    assert result.mode == "incremental"
     assert result.target_ufs == ["PB"]
+    assert result.requested_steps == ["collect", "dbt", "process", "score", "sync"]
     assert result.coletores_resolvidos == pipeline_jobs.COLETORES_ORDEM
     assert result.all_legado is False
-    assert [(step.step, step.target, step.mode) for step in result.steps_executed] == [
-        ("collect", "PB", "incremental"),
-        ("dbt", "PB", None),
-        ("process", "PB", None),
-        ("score", "PB", "incremental"),
-        ("sync", "PB", None),
+    assert [(step.step, step.target, step.mode, step.status) for step in result.steps_executed] == [
+        ("collect", "PB", "incremental", "succeeded"),
+        ("dbt", "PB", None, "succeeded"),
+        ("process", "PB", None, "succeeded"),
+        ("score", "PB", "incremental", "succeeded"),
+        ("sync", "PB", None, "succeeded"),
     ]
+    assert all(step.duration_seconds >= 0 for step in result.steps_executed)
     assert calls == [
         ("prepare_paths", "PB"),
         ("collect", "incremental", "PB", pipeline_jobs.COLETORES_ORDEM),
@@ -77,3 +83,41 @@ def test_resolve_collectors_job_returns_explicit_result():
 
     assert isinstance(result, pipeline_jobs.ResolveCollectorsResult)
     assert result.coletores == ["cauc", "pncp"]
+
+
+def test_execute_pipeline_run_wraps_failed_step_with_partial_result():
+    deps = pipeline_jobs.PipelineExecutionDeps(
+        prepare_paths=lambda uf: None,
+        run_collect=lambda mode, uf, coletores=None: None,
+        run_collect_legacy_all=lambda ufs: None,
+        run_collect_all=lambda mode, ufs, coletores: None,
+        run_dbt=lambda uf: (_ for _ in ()).throw(RuntimeError("dbt explodiu")),
+        run_process=lambda uf: None,
+        run_score=lambda uf, mode=None: None,
+        run_sync=lambda uf: None,
+    )
+
+    try:
+        pipeline_jobs.execute_pipeline_run(
+            pipeline_jobs.PipelineRunInput(
+                uf="PB",
+                mode="incremental",
+                etapas={"collect", "dbt"},
+                coletores=None,
+                root=Path.cwd(),
+                run_id="run_teste",
+            ),
+            deps,
+        )
+    except pipeline_jobs.PipelineExecutionError as exc:
+        result = exc.result
+    else:
+        raise AssertionError("Esperava PipelineExecutionError")
+
+    assert result.run_id == "run_teste"
+    assert result.status == "failed"
+    assert [(step.step, step.status) for step in result.steps_executed] == [
+        ("collect", "succeeded"),
+        ("dbt", "failed"),
+    ]
+    assert result.steps_executed[-1].error_message == "dbt explodiu"

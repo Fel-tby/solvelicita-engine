@@ -317,16 +317,32 @@ def main() -> None:
     )
 
     try:
-        pipeline_jobs.execute_pipeline_run(request, deps)
+        result = pipeline_jobs.execute_pipeline_run(request, deps)
     except KeyboardInterrupt:
         print("\n\n  Pipeline interrompido pelo usuario.")
         sys.exit(0)
+    except pipeline_jobs.PipelineExecutionError as exc:
+        result = exc.result
+        print()
+        print(f"  Run ID   : {result.run_id}")
+        print(f"  Status   : {result.status}")
+        print(f"  Inicio   : {result.started_at}")
+        print(f"  Fim      : {result.finished_at}")
+        print(f"  Duracao  : {result.duration_seconds:.1f}s")
+        if result.steps_executed:
+            last_step = result.steps_executed[-1]
+            print(f"  Falha em : {last_step.step} ({last_step.target})")
+            if last_step.error_message:
+                print(f"  Erro     : {last_step.error_message}")
+        sys.exit(1)
     except ValueError as exc:
         print(str(exc))
         sys.exit(1)
 
     elapsed = time.time() - t0
     print()
+    print(f"  Run ID   : {result.run_id}")
+    print(f"  Status   : {result.status}")
     print(f"  Pipeline concluido em {elapsed/60:.1f} min")
     print("  Dashboard: https://solvelicita.tech")
     print()

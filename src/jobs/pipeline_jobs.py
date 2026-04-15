@@ -3,8 +3,10 @@ from __future__ import annotations
 import os
 import platform
 import subprocess
+import time
 from collections.abc import Callable
 from dataclasses import dataclass
+from datetime import datetime
 from pathlib import Path
 
 from src.config.settings import build_runtime_env
@@ -12,6 +14,7 @@ from src.collectors import cauc, dca, municipios, pncp, siconfi
 from src.engine import solvency
 from src.processors import dca_postprocessor, siconfi_postprocessor
 from src.utils.paths import find_ufs_with_artifact, get_paths
+from src.utils.run_observability import build_run_id, isoformat_utc, utc_now
 from src.utils.supabase_sync import run as supabase_sync
 
 ETAPAS_VALIDAS = {"collect", "dbt", "process", "score", "sync"}
@@ -150,21 +153,42 @@ class PipelineRunInput:
     etapas: set[str]
     coletores: list[str] | None
     root: Path
+    run_id: str | None = None
 
 
 @dataclass(frozen=True)
 class ExecutedStepResult:
     step: str
     target: str
+    status: str
+    started_at: str
+    finished_at: str
+    duration_seconds: float
     mode: str | None = None
+    error_message: str | None = None
 
 
 @dataclass(frozen=True)
 class PipelineRunResult:
+    run_id: str
+    status: str
+    started_at: str
+    finished_at: str
+    duration_seconds: float
+    uf: str
+    mode: str
     target_ufs: list[str]
+    requested_steps: list[str]
     coletores_resolvidos: list[str] | None
     all_legado: bool
     steps_executed: list[ExecutedStepResult]
+
+
+class PipelineExecutionError(RuntimeError):
+    def __init__(self, result: PipelineRunResult, cause: Exception):
+        self.result = result
+        self.cause = cause
+        super().__init__(str(cause))
 
 
 @dataclass(frozen=True)
@@ -177,6 +201,111 @@ class PipelineExecutionDeps:
     run_process: Callable[[str], object]
     run_score: Callable[[str, str | None], object]
     run_sync: Callable[[str], object]
+
+
+def _step_start(run_id: str, step: str, target: str, mode: str | None) -> tuple[datetime, float]:
+    started_at = utc_now()
+    mode_scope = f" mode={mode}" if mode else ""
+    print(
+        f"  [RUN {run_id}] inicio step={step} target={target}{mode_scope} "
+        f"at={isoformat_utc(started_at)}"
+    )
+    return started_at, time.perf_counter()
+
+
+def _step_end(
+    *,
+    run_id: str,
+    step: str,
+    target: str,
+    mode: str | None,
+    started_at: datetime,
+    started_perf: float,
+    status: str,
+    error_message: str | None = None,
+) -> ExecutedStepResult:
+    finished_at = utc_now()
+    duration_seconds = round(time.perf_counter() - started_perf, 3)
+    mode_scope = f" mode={mode}" if mode else ""
+    line = (
+        f"  [RUN {run_id}] fim step={step} target={target}{mode_scope} "
+        f"status={status} duracao={duration_seconds:.3f}s at={isoformat_utc(finished_at)}"
+    )
+    if error_message:
+        line += f" erro={error_message}"
+    print(line)
+    return ExecutedStepResult(
+        step=step,
+        target=target,
+        status=status,
+        started_at=isoformat_utc(started_at),
+        finished_at=isoformat_utc(finished_at),
+        duration_seconds=duration_seconds,
+        mode=mode,
+        error_message=error_message,
+    )
+
+
+def _execute_tracked_step(
+    *,
+    run_id: str,
+    step: str,
+    target: str,
+    mode: str | None,
+    runner: Callable[[], object],
+) -> ExecutedStepResult:
+    started_at, started_perf = _step_start(run_id, step, target, mode)
+    try:
+        runner()
+    except Exception as exc:
+        return _step_end(
+            run_id=run_id,
+            step=step,
+            target=target,
+            mode=mode,
+            started_at=started_at,
+            started_perf=started_perf,
+            status="failed",
+            error_message=str(exc),
+        )
+
+    return _step_end(
+        run_id=run_id,
+        step=step,
+        target=target,
+        mode=mode,
+        started_at=started_at,
+        started_perf=started_perf,
+        status="succeeded",
+    )
+
+
+def _build_run_result(
+    *,
+    run_id: str,
+    status: str,
+    run_started_at: datetime,
+    request: PipelineRunInput,
+    target_ufs: list[str],
+    resolved_collectors: list[str] | None,
+    all_legado: bool,
+    steps_executed: list[ExecutedStepResult],
+) -> PipelineRunResult:
+    finished_at = utc_now()
+    return PipelineRunResult(
+        run_id=run_id,
+        status=status,
+        started_at=isoformat_utc(run_started_at),
+        finished_at=isoformat_utc(finished_at),
+        duration_seconds=round((finished_at - run_started_at).total_seconds(), 3),
+        uf=request.uf,
+        mode=request.mode,
+        target_ufs=target_ufs,
+        requested_steps=[step for step in ETAPAS_ORDEM if step in request.etapas],
+        coletores_resolvidos=resolved_collectors,
+        all_legado=all_legado,
+        steps_executed=steps_executed,
+    )
 
 
 def run_collect_job(request: CollectJobInput) -> CollectJobResult:
@@ -388,6 +517,8 @@ def execute_pipeline_run(
     request: PipelineRunInput,
     deps: PipelineExecutionDeps,
 ) -> PipelineRunResult:
+    run_started_at = utc_now()
+    run_id = request.run_id or build_run_id(uf=request.uf, mode=request.mode, now=run_started_at)
     resolved = resolve_collectors_job(
         ResolveCollectorsInput(
             uf=request.uf,
@@ -414,66 +545,111 @@ def execute_pipeline_run(
 
     steps_executed: list[ExecutedStepResult] = []
 
+    print(
+        f"  [RUN {run_id}] inicio execucao uf={request.uf} mode={request.mode} "
+        f"steps={','.join(step for step in ETAPAS_ORDEM if step in request.etapas)} "
+        f"targets={','.join(target_ufs)}"
+    )
+
+    def run_step(step: str, target: str, mode: str | None, runner: Callable[[], object]) -> None:
+        result = _execute_tracked_step(
+            run_id=run_id,
+            step=step,
+            target=target,
+            mode=mode,
+            runner=runner,
+        )
+        steps_executed.append(result)
+        if result.status != "succeeded":
+            raise PipelineExecutionError(
+                _build_run_result(
+                    run_id=run_id,
+                    status="failed",
+                    run_started_at=run_started_at,
+                    request=request,
+                    target_ufs=target_ufs,
+                    resolved_collectors=resolved.coletores,
+                    all_legado=all_legado,
+                    steps_executed=steps_executed,
+                ),
+                RuntimeError(result.error_message or f"Falha na etapa {step}"),
+            )
+
     if request.uf == ALL_UFS_TOKEN:
         if "collect" in request.etapas:
             if all_legado:
-                deps.run_collect_legacy_all(target_ufs)
-                steps_executed.extend(
-                    [ExecutedStepResult(step="collect", target=uf, mode=request.mode) for uf in target_ufs]
+                run_step(
+                    "collect",
+                    ALL_UFS_TOKEN,
+                    request.mode,
+                    lambda: deps.run_collect_legacy_all(target_ufs),
                 )
             else:
                 assert resolved.coletores is not None
-                deps.run_collect_all(request.mode, target_ufs, resolved.coletores)
-                steps_executed.extend(
-                    [ExecutedStepResult(step="collect", target=uf, mode=request.mode) for uf in target_ufs]
+                run_step(
+                    "collect",
+                    ALL_UFS_TOKEN,
+                    request.mode,
+                    lambda: deps.run_collect_all(request.mode, target_ufs, resolved.coletores),
                 )
 
         if "dbt" in request.etapas:
-            deps.run_dbt(ALL_UFS_TOKEN)
-            steps_executed.append(ExecutedStepResult(step="dbt", target=ALL_UFS_TOKEN))
+            run_step("dbt", ALL_UFS_TOKEN, None, lambda: deps.run_dbt(ALL_UFS_TOKEN))
 
         if "process" in request.etapas:
             for uf in target_ufs:
-                deps.run_process(uf)
-                steps_executed.append(ExecutedStepResult(step="process", target=uf))
+                run_step("process", uf, None, lambda uf_value=uf: deps.run_process(uf_value))
 
         if "score" in request.etapas:
             for uf in target_ufs:
-                deps.run_score(uf, request.mode)
-                steps_executed.append(ExecutedStepResult(step="score", target=uf, mode=request.mode))
+                run_step(
+                    "score",
+                    uf,
+                    request.mode,
+                    lambda uf_value=uf: deps.run_score(uf_value, request.mode),
+                )
 
         if "sync" in request.etapas:
             for uf in target_ufs:
-                deps.run_sync(uf)
-                steps_executed.append(ExecutedStepResult(step="sync", target=uf))
+                run_step("sync", uf, None, lambda uf_value=uf: deps.run_sync(uf_value))
     else:
         if "collect" in request.etapas:
-            deps.run_collect(request.mode, request.uf, resolved.coletores)
-            steps_executed.append(
-                ExecutedStepResult(step="collect", target=request.uf, mode=request.mode)
+            run_step(
+                "collect",
+                request.uf,
+                request.mode,
+                lambda: deps.run_collect(request.mode, request.uf, resolved.coletores),
             )
 
         if "dbt" in request.etapas:
-            deps.run_dbt(request.uf)
-            steps_executed.append(ExecutedStepResult(step="dbt", target=request.uf))
+            run_step("dbt", request.uf, None, lambda: deps.run_dbt(request.uf))
 
         if "process" in request.etapas:
-            deps.run_process(request.uf)
-            steps_executed.append(ExecutedStepResult(step="process", target=request.uf))
+            run_step("process", request.uf, None, lambda: deps.run_process(request.uf))
 
         if "score" in request.etapas:
-            deps.run_score(request.uf, request.mode)
-            steps_executed.append(
-                ExecutedStepResult(step="score", target=request.uf, mode=request.mode)
+            run_step(
+                "score",
+                request.uf,
+                request.mode,
+                lambda: deps.run_score(request.uf, request.mode),
             )
 
         if "sync" in request.etapas:
-            deps.run_sync(request.uf)
-            steps_executed.append(ExecutedStepResult(step="sync", target=request.uf))
+            run_step("sync", request.uf, None, lambda: deps.run_sync(request.uf))
 
-    return PipelineRunResult(
+    result = _build_run_result(
+        run_id=run_id,
+        status="succeeded",
+        run_started_at=run_started_at,
+        request=request,
         target_ufs=target_ufs,
-        coletores_resolvidos=resolved.coletores,
+        resolved_collectors=resolved.coletores,
         all_legado=all_legado,
         steps_executed=steps_executed,
     )
+    print(
+        f"  [RUN {run_id}] fim execucao status={result.status} "
+        f"duracao={result.duration_seconds:.3f}s"
+    )
+    return result
