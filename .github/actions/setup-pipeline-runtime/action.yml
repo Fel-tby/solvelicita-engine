@@ -1,0 +1,68 @@
+name: Setup Pipeline Runtime
+description: Prepara Python, venvs, credenciais GCP e dependencias dbt para os workflows do pipeline.
+
+inputs:
+  python-version:
+    description: Versao do Python usada no workflow.
+    required: false
+    default: "3.11"
+  gcp-sa-key:
+    description: Conteudo do secret JSON da service account do GCP.
+    required: true
+
+runs:
+  using: composite
+  steps:
+    - name: Setup Python
+      uses: actions/setup-python@v5
+      with:
+        python-version: ${{ inputs.python-version }}
+        cache: pip
+        cache-dependency-path: requirements.txt
+
+    - name: Setup main venv
+      shell: bash
+      run: |
+        python -m venv venv
+        ./venv/bin/python -m pip install --upgrade pip
+        ./venv/bin/pip install -r requirements.txt
+
+    - name: Setup dbt venv
+      shell: bash
+      run: |
+        python -m venv venv_dbt
+        ./venv_dbt/bin/python -m pip install --upgrade pip
+        ./venv_dbt/bin/pip install dbt-core dbt-bigquery
+
+    - name: Materialize credentials
+      shell: bash
+      env:
+        GCP_SA_KEY: ${{ inputs.gcp-sa-key }}
+      run: |
+        printf '%s' "$GCP_SA_KEY" > "$GCP_SA_KEY_PATH"
+        cat > .env <<EOF
+        GCP_SA_KEY_PATH=$GCP_SA_KEY_PATH
+        GCP_PROJECT_ID=$GCP_PROJECT_ID
+        BQ_ENABLED=$BQ_ENABLED
+        BQ_DATASET=$BQ_DATASET
+        SUPABASE_URL=$SUPABASE_URL
+        SUPABASE_KEY=$SUPABASE_KEY
+        EOF
+        mkdir -p dbt
+        cat > dbt/profiles.yml <<EOF
+        solvelicita:
+          target: dev
+          outputs:
+            dev:
+              type: bigquery
+              method: service-account
+              project: $GCP_PROJECT_ID
+              dataset: staging
+              location: southamerica-east1
+              keyfile: "$GCP_SA_KEY_PATH"
+              threads: 4
+        EOF
+
+    - name: Run dbt deps
+      shell: bash
+      run: ./venv_dbt/bin/dbt deps --project-dir dbt --profiles-dir dbt
