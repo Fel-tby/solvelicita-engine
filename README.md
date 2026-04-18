@@ -6,7 +6,6 @@
   <a href="https://www.python.org/"><img src="https://img.shields.io/badge/Python-3.11+-3776AB?logo=python&logoColor=white" alt="Python"></a>
   <a href="https://www.getdbt.com/"><img src="https://img.shields.io/badge/dbt-FF694B?logo=dbt&logoColor=white" alt="dbt"></a>
   <a href="https://cloud.google.com/bigquery"><img src="https://img.shields.io/badge/BigQuery-669DF6?logo=googlebigquery&logoColor=white" alt="BigQuery"></a>
-  <a href="https://nextjs.org/"><img src="https://img.shields.io/badge/Next.js-000000?logo=nextdotjs&logoColor=white" alt="Next.js"></a>
   <a href="https://supabase.com/"><img src="https://img.shields.io/badge/Supabase-3ECF8E?logo=supabase&logoColor=white" alt="Supabase"></a>
   <br>
   <a href="tests/"><img src="https://img.shields.io/badge/testes-pytest-0A9EDC?logo=pytest&logoColor=white" alt="pytest"></a>
@@ -53,9 +52,25 @@ Além do score numérico, dois caps de classificação operam de forma independe
 
 ---
 
-## Arquitetura do Pipeline
+## Validação empírica
 
-O SolveLicita opera hoje com um fluxo **BigQuery-first**. Os dados públicos são coletados das APIs oficiais, publicados na camada `raw`, estruturados com `dbt`, enriquecidos por pós-processadores Python e consolidados pela engine de score. Ao final, o resultado é exportado localmente, sincronizado com o Supabase e também pode ser publicado na camada temporal do BigQuery para histórico e análises futuras.
+A metodologia foi validada por backtest walk-forward: o score é calculado em um ano e comparado com o comportamento fiscal observado no ano seguinte, usando a ocorrência futura de Restos a Pagar crônicos como desfecho.
+
+Na validação geral documentada, o modelo operacional apresentou:
+
+| Métrica | Resultado |
+|---|---:|
+| Pares município-ano avaliados | **4.671** |
+| AUC-ROC | **0.7443** |
+| Spearman | **-0.3827** |
+
+O teste sem o componente `RPproc` também preserva discriminação acima do acaso, o que indica que o modelo não depende de uma única variável para ordenar risco. Resultados, limitações e testes de sensibilidade estão em [`docs/VALIDACAO.md`](docs/VALIDACAO.md).
+
+---
+
+## Arquitetura do pipeline
+
+O SolveLicita opera com um fluxo **BigQuery-first**. Os dados públicos são coletados das APIs oficiais, publicados na camada `raw`, estruturados com `dbt`, enriquecidos por pós-processadores Python e consolidados pela engine de score. O resultado pode ser exportado localmente, publicado em snapshots históricos no BigQuery e sincronizado no Supabase para consumo público.
 
 ```mermaid
 flowchart LR
@@ -68,7 +83,7 @@ flowchart LR
         APIS --> RAW
     end
 
-    subgraph TRANSFORM ["2. Transformação (dbt)"]
+    subgraph TRANSFORM ["2. Transformação"]
         direction TB
         DBT["dbt"]
         STG["staging"]
@@ -77,24 +92,24 @@ flowchart LR
         DBT --> STG --> INT --> MART
     end
 
-    subgraph ENRICH ["3. Pós-Processamento (Python)"]
+    subgraph ENRICH ["3. Enriquecimento"]
         direction TB
         PROC["Postprocessors Python"]
-        BQINT[("BQ intermediate")]
+        BQINT[("BigQuery intermediate")]
         PROC -->|MERGE SQL| BQINT
     end
 
-    subgraph SCORE ["4. Scoring Engine"]
+    subgraph SCORE ["4. Score"]
         direction LR
-        ENG["Engine de score v7.0"]
+        ENG["Engine v7.0"]
         CSV["CSV final"]
     end
 
-    subgraph PRESENT ["5. Apresentação"]
+    subgraph PUBLISH ["5. Publicação"]
         direction LR
-        SNAP[("BigQuery snapshots / ml / analytics")]
+        SNAP[("BigQuery snapshots")]
         SB[("Supabase")]
-        WEB["Frontend Next.js"]
+        WEB["Aplicação web"]
     end
 
     PL --> INGEST
@@ -105,14 +120,14 @@ flowchart LR
     ENG --> SNAP
     ENG --> CSV
     CSV --> SB
-    SB --> WEB
+    SB -. consumo público .-> WEB
 
     style PL fill:#0f2744,color:#e8f3ff,stroke:#7fc4ff,stroke-width:2px
     style INGEST fill:#12263d,color:#e8f3ff,stroke:#185FA5,stroke-width:2px
     style TRANSFORM fill:#12263d,color:#e8f3ff,stroke:#2B7BBB,stroke-width:2px
     style ENRICH fill:#12263d,color:#e8f3ff,stroke:#4A97D9,stroke-width:2px
     style SCORE fill:#12263d,color:#e8f3ff,stroke:#6FB4F0,stroke-width:2px
-    style PRESENT fill:#12263d,color:#e8f3ff,stroke:#91CBFF,stroke-width:2px
+    style PUBLISH fill:#12263d,color:#e8f3ff,stroke:#91CBFF,stroke-width:2px
 
     style APIS fill:#1a1f26,color:#f2f7ff,stroke:#8aa7c4,stroke-width:1px
     style RAW fill:#1a1f26,color:#f2f7ff,stroke:#8aa7c4,stroke-width:1px
@@ -129,86 +144,72 @@ flowchart LR
     style WEB fill:#1a1f26,color:#f2f7ff,stroke:#8aa7c4,stroke-width:1px
 ```
 
-### Decisões de Design do Pipeline
-- **Base territorial completa:** todos os municípios permanecem na base, inclusive os classificados como `Sem Dados`.
-- **Dados declarados:** o score usa apenas informações públicas declaradas aos sistemas oficiais, sem imputação contábil.
-- **Fluxo operacional atual:** o BigQuery é a fonte analítica principal; `municipios`, `CAUC`, `SICONFI` e `DCA` já publicam raw direto no BQ com carga segura, enquanto `PNCP` ainda usa checkpoint local durante a coleta.
+Cada camada tem uma responsabilidade distinta:
+
+- `raw`: dados oficiais coletados sem interpretação analítica.
+- `staging`, `intermediate` e `mart`: modelagem e consolidação com `dbt`.
+- `processors`: regras complementares em Python.
+- `engine`: cálculo final do score e classificação de risco.
+- `Supabase`: camada pública consumida pela aplicação web.
 
 ---
 
-## Estrutura do Repositório
+## Estrutura do repositório
 
 ```text
 solvelicita/
-├── dbt/                    # Transformação de dados SQL (Data Warehouse)
-│   ├── models/             # Camadas: staging, intermediate, mart
-│   └── dbt_project.yml     # Configuração do dbt
-├── docs/                   # Metodologia, validações de backtest e assets
-├── frontend/               # Aplicação Next.js (Visualização de Risco)
-├── src/                    # Motor de Coleta e Análise de Risco Fiscal (Python)
-│   ├── collectors/         # Clientes de API (SICONFI, CAUC, PNCP)
-│   ├── processors/         # Cálculos de indicadores (Pós-processamento dbt)
-│   ├── engine/             # Calculadora final do Score (Metodologia)
-│   └── analysis/           # Ferramentas de backtest e estatística
-├── tests/                  # Testes automatizados (pytest)
-└── pipeline.py             # Orquestrador central de ETL e Score
+├── dbt/                    # Transformação SQL no data warehouse
+│   ├── models/             # Camadas staging, intermediate e mart
+│   └── dbt_project.yml     # Configuração do projeto dbt
+├── docs/                   # Metodologia, validação e assets
+├── src/                    # Motor Python de coleta, processamento e score
+│   ├── collectors/         # Clientes de APIs públicas
+│   ├── processors/         # Pós-processamento analítico
+│   ├── engine/             # Cálculo final do score
+│   ├── scorers/            # Curvas, pesos e pontuações parciais
+│   ├── jobs/               # Orquestração testável do pipeline
+│   └── analysis/           # Backtests e análises estatísticas
+├── tests/                  # Testes automatizados
+└── pipeline.py             # CLI principal do pipeline
 ```
 
 ---
 
-## Como reproduzir (Desenvolvimento)
+## Reprodutibilidade
 
-**1. Configuração de Ambientes (Isolados):**
+O pipeline pode ser reproduzido com dois ambientes isolados: um para coleta, processamento e score em Python; outro para transformação SQL com `dbt`.
+
 ```bash
 git clone https://github.com/Fel-tby/solvelicita.git
 cd solvelicita
 
-# Ambiente Principal (Coleta, Processamento e Score)
+# Ambiente principal
 python -m venv venv
-venv\Scripts\activate        # Windows (ou source venv/bin/activate em Linux/mac)
+venv\Scripts\activate
 pip install -r requirements.txt
 deactivate
 
-# Ambiente dbt (Transformação SQL)
+# Ambiente dbt
 python -m venv venv_dbt
-venv_dbt\Scripts\activate    # Windows
+venv_dbt\Scripts\activate
 pip install dbt-core dbt-bigquery
 deactivate
 ```
 
-**2. Credenciais:**
-- Configure as credenciais do Google Cloud e Supabase no arquivo `.env`.
-- Configure seu `dbt/profiles.yml` a partir de [`dbt/profiles.yml.example`](dbt/profiles.yml.example).
-- Para o frontend, configure `frontend/.env.local` a partir de [`frontend/.env.local.example`](frontend/.env.local.example).
+Configure as credenciais de Google Cloud e Supabase no arquivo `.env`, usando [`.env.example`](.env.example) como referência. Configure também o perfil dbt a partir de [`dbt/profiles.yml.example`](dbt/profiles.yml.example).
 
-**3. Execução do Orquestrador:**
-O orquestrador `pipeline.py` gerencia as etapas de forma modular e sequencial.
+Execução principal:
 
 ```bash
-# Ative o ambiente principal
 venv\Scripts\activate
-
-# Rodar o motor de score completo para uma UF
 python pipeline.py --uf PB --mode incremental --steps collect,dbt,process,score,sync
-
-# Rodar coleta + transformação + recalcular score sem sync
-python pipeline.py --uf PB --mode incremental --steps collect,dbt,process,score
-
-# Rodar apenas etapas finais com dados já preparados
-python pipeline.py --uf PB --steps process,score,sync
-
-# Rodar CAUC diário para todo o Nordeste, sem prompts
-python pipeline.py --uf ALL --mode incremental --steps collect,dbt,process,score,sync --collectors cauc --yes
-
-# Rodar incrementais semanais dos demais coletores no Nordeste
-python pipeline.py --uf ALL --mode incremental --steps collect,dbt,process,score,sync --collectors siconfi,dca,pncp --yes
 ```
 
-**Observação sobre `--uf ALL`:**
-- sem `collect`, ele aceita apenas `process`, `score` e `sync`
-- com `collect` e sem `--collectors`, preserva o modo legado `CAUC-only`
-- com `collect` e `--collectors`, vira um `ALL` real para as UFs oficiais do Nordeste (`AL, BA, CE, MA, PB, PE, PI, RN, SE`)
-- UFs fora desse conjunto, como `MG`, são ignoradas no modo coletivo
+Execução parcial, quando os dados já foram coletados e transformados:
+
+```bash
+python pipeline.py --uf PB --steps process,score,sync
+```
 
 ---
 
@@ -229,9 +230,3 @@ cd dbt && dbt test
 venv\Scripts\activate
 pytest -v
 ```
-
----
-
-## Como citar
-
-> SolveLicita. *Score de Solvência Municipal*. 2026. Disponível em: https://solvelicita.tech. Código, metodologia e validação: https://github.com/Fel-tby/solvelicita.
