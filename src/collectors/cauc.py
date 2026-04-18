@@ -14,6 +14,8 @@ Rodar individualmente:
 
 import sys
 import io
+import time
+from dataclasses import dataclass
 from datetime import date
 from pathlib import Path
 
@@ -36,10 +38,24 @@ URL_CAUC_BULK = (
     "relatorio-situacao-de-varios-entes---municipios---uf-todas---abrangencia-1.csv"
 )
 
-# Mapeamento dos códigos de requisito CAUC para nomes semânticos no BigQuery.
-# O CSV em disco mantém os códigos originais ("1.1", "1.2" etc.) para que o
-# cauc_processor.py legado continue funcionando sem alteração.
-# O rename é aplicado apenas no DataFrame enviado ao BQ.
+# Configuracao de download resiliente do CSV nacional.
+CAUC_DOWNLOAD_MAX_ATTEMPTS = 4
+CAUC_DOWNLOAD_BACKOFF_SECONDS = 5.0
+CAUC_RETRIABLE_STATUS_CODES = {429, 500, 502, 503, 504}
+
+
+@dataclass(frozen=True)
+class CaucBulkCsv:
+    texto: str
+    df_raw: pd.DataFrame
+    data_pesquisa: str
+    col_ibge: str
+
+
+# Mapeamento dos codigos de requisito CAUC para nomes semanticos no BigQuery.
+# O CSV em disco mantem os codigos originais ("1.1", "1.2" etc.) para que o
+# cauc_processor.py legado continue funcionando sem alteracao.
+# O rename e aplicado apenas no DataFrame enviado ao BQ.
 CAUC_COL_MAP = {
     # Metadados
     "UF":                    "uf",
@@ -81,7 +97,98 @@ CAUC_COL_MAP = {
 }
 
 
-def run(uf: str = "PB") -> pd.DataFrame:
+def _decode_cauc_csv(content: bytes) -> str:
+    try:
+        return content.decode("utf-8-sig")
+    except UnicodeDecodeError:
+        return content.decode("iso-8859-1")
+
+
+def _parse_cauc_bulk_csv(texto: str) -> CaucBulkCsv:
+    df_raw = pd.read_csv(
+        io.StringIO(texto), sep=";", skiprows=3, dtype=str, na_filter=False
+    )
+
+    linhas = texto.split("\n")
+    data_pesquisa = linhas[0].strip().replace('"', '').replace("Data da Pesquisa: ", "")
+
+    col_ibge = next((c for c in df_raw.columns if "ibge" in c.lower()), None)
+    if not col_ibge:
+        raise ValueError(f"Coluna IBGE nao encontrada. Colunas: {list(df_raw.columns)}")
+
+    return CaucBulkCsv(
+        texto=texto,
+        df_raw=df_raw,
+        data_pesquisa=data_pesquisa,
+        col_ibge=col_ibge,
+    )
+
+
+def _is_retriable_download_error(exc: Exception) -> bool:
+    if isinstance(exc, (requests.ConnectionError, requests.Timeout)):
+        return True
+
+    if isinstance(exc, requests.HTTPError):
+        response = getattr(exc, "response", None)
+        status_code = getattr(response, "status_code", None)
+        return status_code in CAUC_RETRIABLE_STATUS_CODES
+
+    return False
+
+
+def _download_cauc_bulk_content(
+    *,
+    max_attempts: int = CAUC_DOWNLOAD_MAX_ATTEMPTS,
+    backoff_seconds: float = CAUC_DOWNLOAD_BACKOFF_SECONDS,
+) -> bytes:
+    headers = {"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64)"}
+    last_error: Exception | None = None
+
+    for attempt in range(1, max_attempts + 1):
+        try:
+            resp = requests.get(
+                URL_CAUC_BULK,
+                headers=headers,
+                verify=False,
+                timeout=60,
+            )
+            resp.raise_for_status()
+            return resp.content
+        except requests.RequestException as exc:
+            last_error = exc
+            if attempt >= max_attempts or not _is_retriable_download_error(exc):
+                raise
+
+            wait_seconds = backoff_seconds * (2 ** (attempt - 1))
+            print(
+                "  Aviso: falha temporaria ao baixar CAUC "
+                f"(tentativa {attempt}/{max_attempts}): {exc}"
+            )
+            print(f"  Nova tentativa em {wait_seconds:.0f}s...")
+            time.sleep(wait_seconds)
+
+    if last_error:
+        raise last_error
+    raise RuntimeError("Falha ao baixar CSV nacional do CAUC.")
+
+
+def download_cauc_bulk_csv(
+    *,
+    max_attempts: int = CAUC_DOWNLOAD_MAX_ATTEMPTS,
+    backoff_seconds: float = CAUC_DOWNLOAD_BACKOFF_SECONDS,
+) -> CaucBulkCsv:
+    print(f"\n  Baixando CSV nacional do CKAN...")
+    content = _download_cauc_bulk_content(
+        max_attempts=max_attempts,
+        backoff_seconds=backoff_seconds,
+    )
+    bulk_csv = _parse_cauc_bulk_csv(_decode_cauc_csv(content))
+    print(f"  OK {len(bulk_csv.df_raw)} municipios no Brasil")
+    print(f"  Data da pesquisa: {bulk_csv.data_pesquisa}")
+    return bulk_csv
+
+
+def run(uf: str = "PB", bulk_csv: CaucBulkCsv | None = None) -> pd.DataFrame:
     """
     Baixa o CSV nacional do CAUC, filtra municípios da UF e publica no BQ.
 
@@ -98,32 +205,13 @@ def run(uf: str = "PB") -> pd.DataFrame:
     municipios_df = carregar_municipios(uf=uf, prefer_local=True, persist_local=True)
     ibges_uf      = set(municipios_df["cod_ibge"].tolist())
 
-    print(f"\n  Baixando CSV nacional do CKAN...")
-    headers = {"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64)"}
-    resp    = requests.get(URL_CAUC_BULK, headers=headers, verify=False, timeout=60)
-    resp.raise_for_status()
+    if bulk_csv is None:
+        bulk_csv = download_cauc_bulk_csv()
 
-    try:
-        texto = resp.content.decode("utf-8-sig")
-    except UnicodeDecodeError:
-        texto = resp.content.decode("iso-8859-1")
-
-    df_raw = pd.read_csv(
-        io.StringIO(texto), sep=";", skiprows=3, dtype=str, na_filter=False
-    )
-    print(f"  ✅ {len(df_raw)} municípios no Brasil")
-
-    linhas        = texto.split("\n")
-    data_pesquisa = linhas[0].strip().replace('"', '').replace("Data da Pesquisa: ", "")
-    print(f"  Data da pesquisa: {data_pesquisa}")
-
-    col_ibge = next((c for c in df_raw.columns if "ibge" in c.lower()), None)
-    if not col_ibge:
-        raise ValueError(f"Coluna IBGE não encontrada. Colunas: {list(df_raw.columns)}")
-
-    df_raw[col_ibge] = df_raw[col_ibge].astype(str)
-    df_uf            = df_raw[df_raw[col_ibge].isin(ibges_uf)].copy()
-    df_uf["data_pesquisa"] = data_pesquisa
+    df_raw = bulk_csv.df_raw
+    cod_ibge = df_raw[bulk_csv.col_ibge].astype(str)
+    df_uf = df_raw[cod_ibge.isin(ibges_uf)].copy()
+    df_uf["data_pesquisa"] = bulk_csv.data_pesquisa
     df_uf["data_coleta"]   = hoje
 
     print(f"  Municípios {uf} encontrados: {len(df_uf)}")

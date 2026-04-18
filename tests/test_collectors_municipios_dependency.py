@@ -49,6 +49,45 @@ def test_cauc_run_carrega_municipios_sem_dependencia_de_csv(monkeypatch):
     assert published["uf"] == "SE"
 
 
+def test_cauc_download_retry_em_erro_temporario(monkeypatch):
+    chamadas = []
+    csv_text = "\n".join(
+        [
+            '"Data da Pesquisa: 2026-04-12"',
+            "linha 2",
+            "linha 3",
+            "UF;Nome do Ente Federado;Codigo IBGE;Fonte",
+            "SE;Amparo;2800100;CKAN",
+        ]
+    )
+
+    class DummyResponse:
+        def __init__(self, status_code, content=b""):
+            self.status_code = status_code
+            self.content = content
+
+        def raise_for_status(self):
+            if self.status_code >= 400:
+                exc = cauc.requests.HTTPError(f"{self.status_code} Server Error")
+                exc.response = self
+                raise exc
+
+    def fake_get(*args, **kwargs):
+        chamadas.append((args, kwargs))
+        if len(chamadas) == 1:
+            return DummyResponse(503)
+        return DummyResponse(200, csv_text.encode("utf-8"))
+
+    monkeypatch.setattr(cauc.requests, "get", fake_get)
+    monkeypatch.setattr(cauc.time, "sleep", lambda _seconds: None)
+
+    bulk_csv = cauc.download_cauc_bulk_csv(max_attempts=2, backoff_seconds=0)
+
+    assert len(chamadas) == 2
+    assert bulk_csv.data_pesquisa == "2026-04-12"
+    assert len(bulk_csv.df_raw) == 1
+
+
 def test_dca_run_carrega_municipios_sem_dependencia_de_csv(monkeypatch):
     published = {}
     municipios_df = pd.DataFrame(

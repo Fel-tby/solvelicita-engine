@@ -30,6 +30,7 @@ class CollectJobInput:
     mode: str
     uf: str
     coletores: list[str] | None = None
+    cauc_bulk_provider: Callable[[], cauc.CaucBulkCsv] | None = None
 
 
 @dataclass(frozen=True)
@@ -308,6 +309,18 @@ def _build_run_result(
     )
 
 
+def _build_cauc_bulk_provider() -> Callable[[], cauc.CaucBulkCsv]:
+    bulk_csv: cauc.CaucBulkCsv | None = None
+
+    def get_bulk_csv() -> cauc.CaucBulkCsv:
+        nonlocal bulk_csv
+        if bulk_csv is None:
+            bulk_csv = cauc.download_cauc_bulk_csv()
+        return bulk_csv
+
+    return get_bulk_csv
+
+
 def run_collect_job(request: CollectJobInput) -> CollectJobResult:
     print("\n" + "=" * 55)
     print(f"  ETAPA: COLETA [{request.mode.upper()}] - {request.uf}")
@@ -319,7 +332,19 @@ def run_collect_job(request: CollectJobInput) -> CollectJobResult:
     if "municipios" in coletores_ativos:
         etapas_coleta.append(("Municipios", lambda: municipios.run(uf=request.uf)))
     if "cauc" in coletores_ativos:
-        etapas_coleta.append(("CAUC", lambda: cauc.run(uf=request.uf)))
+        etapas_coleta.append(
+            (
+                "CAUC",
+                lambda: cauc.run(
+                    uf=request.uf,
+                    bulk_csv=(
+                        request.cauc_bulk_provider()
+                        if request.cauc_bulk_provider is not None
+                        else None
+                    ),
+                ),
+            )
+        )
     if "siconfi" in coletores_ativos:
         etapas_coleta.append(
             (
@@ -354,23 +379,32 @@ def run_collect_legacy_all_job(request: CollectLegacyAllJobInput) -> CollectLega
     print("=" * 55)
 
     total = len(request.ufs)
+    cauc_bulk_provider = _build_cauc_bulk_provider()
     for idx, uf in enumerate(request.ufs, start=1):
         print(f"\n[{idx}/{total}] CAUC incremental - {uf}...")
         get_paths(uf)
-        cauc.run(uf=uf)
+        cauc.run(uf=uf, bulk_csv=cauc_bulk_provider())
 
     return CollectLegacyAllJobResult(ufs=list(request.ufs))
 
 
 def run_collect_all_job(request: CollectAllJobInput) -> CollectAllJobResult:
     total = len(request.ufs)
+    cauc_bulk_provider = (
+        _build_cauc_bulk_provider() if "cauc" in request.coletores else None
+    )
     for idx, uf in enumerate(request.ufs, start=1):
         print("\n" + "-" * 55)
         print(f"  COLETA ALL [{idx}/{total}] - {uf}")
         print("-" * 55)
         get_paths(uf)
         run_collect_job(
-            CollectJobInput(mode=request.mode, uf=uf, coletores=request.coletores)
+            CollectJobInput(
+                mode=request.mode,
+                uf=uf,
+                coletores=request.coletores,
+                cauc_bulk_provider=cauc_bulk_provider,
+            )
         )
 
     return CollectAllJobResult(

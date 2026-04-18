@@ -85,6 +85,39 @@ def test_resolve_collectors_job_returns_explicit_result():
     assert result.coletores == ["cauc", "pncp"]
 
 
+def test_run_collect_all_job_reusa_download_cauc(monkeypatch):
+    sentinel = object()
+    chamadas = []
+
+    monkeypatch.setattr(pipeline_jobs, "get_paths", lambda uf: None)
+    monkeypatch.setattr(
+        pipeline_jobs.cauc,
+        "download_cauc_bulk_csv",
+        lambda: chamadas.append(("download_cauc",)) or sentinel,
+    )
+    monkeypatch.setattr(
+        pipeline_jobs.cauc,
+        "run",
+        lambda uf, bulk_csv=None: chamadas.append(("cauc", uf, bulk_csv)),
+    )
+
+    result = pipeline_jobs.run_collect_all_job(
+        pipeline_jobs.CollectAllJobInput(
+            mode="incremental",
+            ufs=["AL", "BA", "CE"],
+            coletores=["cauc"],
+        )
+    )
+
+    assert isinstance(result, pipeline_jobs.CollectAllJobResult)
+    assert chamadas == [
+        ("download_cauc",),
+        ("cauc", "AL", sentinel),
+        ("cauc", "BA", sentinel),
+        ("cauc", "CE", sentinel),
+    ]
+
+
 def test_execute_pipeline_run_wraps_failed_step_with_partial_result():
     deps = pipeline_jobs.PipelineExecutionDeps(
         prepare_paths=lambda uf: None,
