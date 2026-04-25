@@ -1,0 +1,82 @@
+name: Pipeline Nacional Manual
+
+on:
+  workflow_dispatch:
+    inputs:
+      mode:
+        description: "Modo de coleta"
+        required: true
+        default: "incremental"
+        type: choice
+        options:
+          - incremental
+          - full
+      steps:
+        description: "Etapas separadas por virgula"
+        required: true
+        default: "collect,dbt,process,score,sync"
+      collectors:
+        description: "Coletores separados por virgula"
+        required: false
+        default: "municipios,cauc,siconfi,dca,pncp"
+      max_parallel:
+        description: "Quantidade maxima de UFs em paralelo"
+        required: true
+        default: "6"
+        type: choice
+        options:
+          - "3"
+          - "4"
+          - "6"
+          - "8"
+          - "10"
+
+permissions:
+  contents: read
+
+jobs:
+  pipeline-national-dispatch:
+    strategy:
+      fail-fast: false
+      max-parallel: ${{ fromJson(github.event.inputs.max_parallel) }}
+      matrix:
+        uf:
+          - AC
+          - AL
+          - AM
+          - AP
+          - BA
+          - CE
+          - DF
+          - ES
+          - GO
+          - MA
+          - MG
+          - MS
+          - MT
+          - PA
+          - PB
+          - PE
+          - PI
+          - PR
+          - RJ
+          - RN
+          - RO
+          - RR
+          - RS
+          - SC
+          - SE
+          - SP
+          - TO
+    concurrency:
+      group: pipeline-national-dispatch-${{ matrix.uf }}
+      cancel-in-progress: false
+    uses: ./.github/workflows/pipeline_state_runner.yml
+    secrets: inherit
+    with:
+      uf: ${{ matrix.uf }}
+      mode: ${{ github.event.inputs.mode }}
+      steps: ${{ github.event.inputs.steps }}
+      collectors: ${{ github.event.inputs.collectors }}
+      timeout_minutes: 480
+      artifact_prefix: national-dispatch

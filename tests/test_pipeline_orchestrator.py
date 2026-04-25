@@ -37,12 +37,22 @@ def test_validar_uf_all_real_usa_nordeste_oficial():
     assert all_legado is False
 
 
+def test_all_ufs_brasil_contem_27_unidades_federativas():
+    assert len(pipeline.ALL_UFS_BRASIL) == 27
+    assert "DF" in pipeline.ALL_UFS_BRASIL
+    assert "SP" in pipeline.ALL_UFS_BRASIL
+
+
 def test_validar_uf_all_sem_collect_filtra_mg(monkeypatch):
-    monkeypatch.setattr(pipeline, "descobrir_ufs_presentes", lambda **kwargs: ["MG", "PB", "SE"])
+    monkeypatch.setattr(
+        pipeline.pipeline_jobs,
+        "discover_present_ufs_job",
+        lambda request: pipeline.pipeline_jobs.DiscoverPresentUfsResult(["MG", "PB", "SE"]),
+    )
 
     ufs, all_legado = pipeline.validar_uf_all("incremental", {"process", "score", "sync"})
 
-    assert ufs == ["PB", "SE"]
+    assert ufs == ["MG", "PB", "SE"]
     assert all_legado is False
 
 

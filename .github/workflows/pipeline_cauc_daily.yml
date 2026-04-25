@@ -1,19 +1,64 @@
-name: Pipeline CAUC Diario
+name: Pipeline CAUC Semanal Nacional
 
 on:
   workflow_dispatch:
   schedule:
-    - cron: "0 3 * * *"
+    # 00:00 America/Sao_Paulo/Brasilia = 03:00 UTC
+    - cron: "0 3 * * 5"
 
 permissions:
   contents: read
 
 concurrency:
-  group: pipeline-cauc-daily
+  group: cauc-weekly-national
   cancel-in-progress: false
 
 jobs:
-  cauc-daily:
+  collect-cauc-matrix:
+    strategy:
+      fail-fast: false
+      max-parallel: 8
+      matrix:
+        uf:
+          - AC
+          - AL
+          - AM
+          - AP
+          - BA
+          - CE
+          - DF
+          - ES
+          - GO
+          - MA
+          - MG
+          - MS
+          - MT
+          - PA
+          - PB
+          - PE
+          - PI
+          - PR
+          - RJ
+          - RN
+          - RO
+          - RR
+          - RS
+          - SC
+          - SE
+          - SP
+          - TO
+    uses: ./.github/workflows/pipeline_state_runner.yml
+    secrets: inherit
+    with:
+      uf: ${{ matrix.uf }}
+      mode: incremental
+      steps: collect
+      collectors: cauc
+      timeout_minutes: 120
+      artifact_prefix: cauc-weekly-collect
+
+  dbt-once:
+    needs: collect-cauc-matrix
     runs-on: ubuntu-latest
     timeout-minutes: 180
     env:
@@ -34,24 +79,57 @@ jobs:
           python-version: "3.11"
           gcp-sa-key: ${{ secrets.GCP_SA_KEY }}
 
-      - name: Run CAUC daily pipeline
+      - name: Run dbt once
         shell: bash
-        run: |
-          ./venv/bin/python pipeline.py \
-            --uf ALL \
-            --mode incremental \
-            --steps collect,dbt,process,score,sync \
-            --collectors cauc \
-            --yes
+        run: ./venv_dbt/bin/dbt run --project-dir dbt --profiles-dir dbt
 
-      - name: Upload logs and artifacts
+      - name: Upload dbt logs
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: cauc-daily-artifacts
-          path: |
-            dbt/logs/
-            data/outputs/
-            data/processed/
-            data/analysis/
+          name: cauc-weekly-dbt
+          path: dbt/logs/
           if-no-files-found: ignore
+
+  process-score-sync-matrix:
+    needs: dbt-once
+    strategy:
+      fail-fast: false
+      max-parallel: 8
+      matrix:
+        uf:
+          - AC
+          - AL
+          - AM
+          - AP
+          - BA
+          - CE
+          - DF
+          - ES
+          - GO
+          - MA
+          - MG
+          - MS
+          - MT
+          - PA
+          - PB
+          - PE
+          - PI
+          - PR
+          - RJ
+          - RN
+          - RO
+          - RR
+          - RS
+          - SC
+          - SE
+          - SP
+          - TO
+    uses: ./.github/workflows/pipeline_state_runner.yml
+    secrets: inherit
+    with:
+      uf: ${{ matrix.uf }}
+      mode: incremental
+      steps: process,score,sync
+      timeout_minutes: 180
+      artifact_prefix: cauc-weekly-final

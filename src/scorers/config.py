@@ -3,6 +3,15 @@
 
 from datetime import date
 
+from src.config.br_regions import (
+    REGION_CENTER_WEST,
+    REGION_NORTH,
+    REGION_NORTHEAST,
+    REGION_SOUTH,
+    REGION_SOUTHEAST,
+    get_region_for_uf,
+)
+
 # Pesos dos indicadores
 PESOS = {
     "lliq": 35,       # v6.2: 30 -> +5 (melhor preditor, AUC=0.691)
@@ -49,7 +58,7 @@ N_ANOS_CRONICOS_CAP_MEDIO = 4  # v6.2: 5 -> v7.0: 4 (>=4 anos -> teto medio)
 
 # Limiares operacionais
 LIMIAR_RPROC_CRONICO = 3.0    # % da receita; ano acima = cronico (inalterado)
-LIMIAR_AUTONOMIA_CRIT = 0.08  # < 8% RCL = dependencia critica do FPM
+LIMIAR_AUTONOMIA_CRIT = 0.08  # baseline Nordeste; overrides regionais via helper
 LIMIAR_LLIQ_SUSPEITO = -0.50  # abaixo = dado_suspeito
 JANELA_RGF_BIMESTRAL = 90     # dias; municipios > 50k hab
 JANELA_RGF_SEMESTRAL = 210    # dias; municipios <= 50k hab
@@ -98,11 +107,53 @@ SIGMOID_AUTONOMIA_DEFAULT = {
     "grande": (0.0228, 306.2),
 }
 
+LIMIAR_AUTONOMIA_CRIT_POR_REGIAO = {
+    REGION_NORTHEAST: 0.0500,
+    REGION_NORTH: 0.0530,
+    REGION_CENTER_WEST: 0.0750,
+    REGION_SOUTH: 0.0780,
+    REGION_SOUTHEAST: 0.0660,
+}
+
+SIGMOID_AUTONOMIA_POR_REGIAO = {
+    REGION_NORTHEAST: {
+        "micro": (0.0296, 98.6),
+        "pequeno": (0.0276, 77.9),
+        "médio": (0.0318, 96.2),
+        "grande": (0.0228, 306.2),
+    },
+    REGION_NORTH: {
+        "micro": (0.0314, 98.6),
+        "pequeno": (0.0293, 77.9),
+        "médio": (0.0337, 96.2),
+        "grande": (0.0242, 306.2),
+    },
+    REGION_CENTER_WEST: {
+        "micro": (0.0444, 98.6),
+        "pequeno": (0.0414, 77.9),
+        "médio": (0.0476, 96.2),
+        "grande": (0.0342, 306.2),
+    },
+    REGION_SOUTH: {
+        "micro": (0.0463, 98.6),
+        "pequeno": (0.0432, 77.9),
+        "médio": (0.0498, 96.2),
+        "grande": (0.0357, 306.2),
+    },
+    REGION_SOUTHEAST: {
+        "micro": (0.0390, 98.6),
+        "pequeno": (0.0364, 77.9),
+        "médio": (0.0419, 96.2),
+        "grande": (0.0300, 306.2),
+    },
+}
+
 # Overrides por UF
 # Estrutura:
 # OVERRIDES_UF = {
 #     "CE": {
 #         "pesos": {"lliq": 33, "rproc": 17},  # substitui apenas o que mudar
+#         "limiar_autonomia_crit": 0.0810,      # ajuste fino opcional do limiar
 #         "sigmoid_autonomia": {                # substitui apenas o porte alterado
 #             "micro": (0.0310, 95.0),
 #         },
@@ -124,10 +175,29 @@ def get_pesos(uf: str) -> dict:
     return {**PESOS, **override}
 
 
+def get_limiar_autonomia_crit(uf: str) -> float:
+    """
+    Retorna o limiar de autonomia critica por UF, resolvido via regiao.
+    Permite override fino por UF sem alterar o template regional.
+    """
+    uf_upper = uf.upper()
+    uf_override = OVERRIDES_UF.get(uf_upper, {}).get("limiar_autonomia_crit")
+    if uf_override is not None:
+        return float(uf_override)
+    regiao = get_region_for_uf(uf_upper)
+    return float(LIMIAR_AUTONOMIA_CRIT_POR_REGIAO[regiao])
+
+
 def get_sigmoid_autonomia(uf: str, porte: str) -> tuple:
     """
     Retorna (mu, k) da sigmoid de Autonomia para a UF e porte informados.
-    Fallback: parametros PB (SIGMOID_AUTONOMIA_DEFAULT) quando UF nao tem override.
+    Resolucao: override por UF > template regional > baseline Nordeste.
     """
-    uf_overrides = OVERRIDES_UF.get(uf.upper(), {}).get("sigmoid_autonomia", {})
-    return uf_overrides.get(porte, SIGMOID_AUTONOMIA_DEFAULT[porte])
+    uf_upper = uf.upper()
+    uf_overrides = OVERRIDES_UF.get(uf_upper, {}).get("sigmoid_autonomia", {})
+    if porte in uf_overrides:
+        return uf_overrides[porte]
+
+    regiao = get_region_for_uf(uf_upper)
+    region_params = SIGMOID_AUTONOMIA_POR_REGIAO.get(regiao, SIGMOID_AUTONOMIA_DEFAULT)
+    return region_params.get(porte, SIGMOID_AUTONOMIA_DEFAULT[porte])

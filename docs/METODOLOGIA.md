@@ -69,6 +69,8 @@ A versão anterior (v5.x) usava Saldo de Caixa (DCA) e Restos a Pagar (RREO Anex
 
 Quando ambas as periodicidades estão disponíveis para o mesmo exercício, o dado **quadrimestral (Q) tem prioridade** sobre o semestral (S).
 
+Na coleta do SICONFI, municípios com até 50 mil habitantes podem aparecer tanto no **RGF normal** quanto no **RGF Simplificado**. O pipeline considera ambos os caminhos válidos e tenta a versão **semestral (S)** antes de concluir ausência de dado para esse porte.
+
 ### Fallback pré-RPNP (lliq_parcial)
 
 Quando o município entregou RGF Anexo 05 mas **sem a coluna pós-RPNP** (padrão anterior a certas versões do SICONFI), o sistema usa a coluna pré-RPNP como proxy:
@@ -120,6 +122,8 @@ A coleta é feita via Portal de Dados Abertos do Tesouro (CKAN) — snapshot nac
 
 Mede se o município arrecada o que planejou. Usa **média ponderada por recência** sobre os exercícios com RREO entregue (2020–2025):
 
+Para fins de cobertura, contam como entrega válida tanto o **RREO normal** quanto o **RREO Simplificado**, desde que o **Anexo 01** contenha as colunas necessárias para `Receita Prevista` e `Receita Realizada`.
+
 | Exercício | Peso relativo |
 |---|---|
 | 2025 | 40% |
@@ -144,6 +148,8 @@ A zona saudável é entre 90% e 105%.
 ## Qsiconfi — Qualidade e Transparência (peso 15% + cap duro)
 
 Proporção de anos (2020–2025) em que o município enviou o RREO ao Tesouro Nacional.
+
+Na contagem de `anos_entregues`, o pipeline considera entrega válida quando existe **RREO normal ou RREO Simplificado** com **Anexo 01** utilizável no exercício.
 
 ### Pontuação numérica
 
@@ -176,9 +182,17 @@ Independente do score numérico calculado pelos demais indicadores:
 
 Calculado a partir do FINBRA/DCA. Mede a proporção da receita corrente gerada autonomamente pelo município (IPTU, ISS, ITBI e taxas), sem depender de repasses federais ou estaduais.
 
-**Flag de alerta:** municípios com `Autonomia < 8% da RCL` recebem flag `autonomia_critica = True` no output, independente do score. Municípios nessa faixa são completamente dependentes do FPM, que pode variar 20–30% entre meses.
+**Flag de alerta:** `autonomia_critica` é resolvida por `UF`, usando template da região correspondente. A régua da flag é mais conservadora que a curva de pontuação e serve como sinal operacional de dependência estrutural.
 
-Pontuação via **curva sigmoid calibrada por porte populacional**:
+| Região | Limiar crítico (`autonomia_critica = True`) |
+|---|---|
+| Norte | `< 5,30% da RCL` |
+| Nordeste | `< 5,00% da RCL` |
+| Centro-Oeste | `< 7,50% da RCL` |
+| Sudeste | `< 6,60% da RCL` |
+| Sul | `< 7,80% da RCL` |
+
+Pontuação via **curva sigmoid calibrada por porte populacional e resolvida por região**:
 
 | Porte | População |
 |---|---|
@@ -186,6 +200,27 @@ Pontuação via **curva sigmoid calibrada por porte populacional**:
 | Pequeno | 10.000 – 50.000 |
 | Médio | 50.000 – 200.000 |
 | Grande | > 200.000 hab. |
+
+Os parâmetros regionais deslocam o ponto de inflexão da curva (`mu`) por porte. A inclinação (`k`) permanece fixa por porte na versão atual:
+
+| Porte | `k` |
+|---|---|
+| Micro | `98.6` |
+| Pequeno | `77.9` |
+| Médio | `96.2` |
+| Grande | `306.2` |
+
+| Região | `mu` Micro | `mu` Pequeno | `mu` Médio | `mu` Grande |
+|---|---|---|---|---|
+| Norte | `3,14%` | `2,93%` | `3,37%` | `2,42%` |
+| Nordeste | `2,96%` | `2,76%` | `3,18%` | `2,28%` |
+| Centro-Oeste | `4,44%` | `4,14%` | `4,76%` | `3,42%` |
+| Sudeste | `3,90%` | `3,64%` | `4,19%` | `3,00%` |
+| Sul | `4,63%` | `4,32%` | `4,98%` | `3,57%` |
+
+**Leitura prática:** um mesmo nível de receita própria recebe nota mais alta em regiões estruturalmente menos autônomas e nota mais baixa em regiões onde a capacidade tributária média é maior. O scorer continua único; muda apenas o template regional aplicado à `UF`.
+
+**Semântica do indicador:** a regionalização não altera o peso de `Autonomia` no score nem cria cap duro adicional de classificação. Ela apenas ajusta a interpretação relativa da mesma métrica entre macrorregiões brasileiras.
 
 ---
 
@@ -200,6 +235,8 @@ rproc_pct = RestosAPagarProcessadosENaoProcessadosLiquidadosAPagar / Receita_Rea
 ```
 
 Extraído do **RREO Anexo 07**, `cod_conta = RestosAPagarProcessadosENaoProcessadosLiquidadosAPagar`, coluna `Saldo e = (a+ b) - (c + d)`, linha `TOTAL (III) = (I + II)`.
+
+Quando o município entrega apenas a versão simplificada do relatório, o pipeline tenta extrair o mesmo indicador a partir do **RREO Simplificado Anexo 07**. Se o anexo não existir em algum exercício, o ano é excluído do cômputo de `n_anos_cronicos`, mas isso não invalida automaticamente todo o município.
 
 ### n_anos_cronicos
 
@@ -243,6 +280,7 @@ Municípios com `n_anos_cronicos ≥ 4` têm classificação máxima **travada e
 | Situação | Comportamento |
 |---|---|
 | Município sem RREO (0 anos) | Score não calculado — ⚫ Sem Dados |
+| Município pequeno com entrega apenas simplificada | O pipeline tenta `RREO Simplificado` e `RGF Simplificado` antes de concluir ausência de dado |
 | RGF Anexo 05 fora da janela temporal | Confidence decay: fator proporcional em `Lliq` + flag `dado_defasado` |
 | Apenas coluna pré-RPNP disponível | `lliq_parcial = True` + penalidade de 5 pts |
 | `Lliq` anômalo (< −0.50) | Capping em −0.50 + flag `dado_suspeito` |
@@ -260,4 +298,4 @@ Municípios com `n_anos_cronicos ≥ 4` têm classificação máxima **travada e
 - DCA/FINBRA tem defasagem anual estrutural (~14 meses no pior caso) — afeta `Autonomia` apenas; `Lliq` usa RGF com defasagem máxima de 90–210 dias
 - `Lliq` negativo extremo pode indicar distorção de RPPS ou cancelamento contábil de empenhos — flag `dado_suspeito` sinaliza, mas detecção completa requer auditoria manual do Balanço Patrimonial
 - `rproc_pct` não distingue municípios que quitaram RP por pagamento real daqueles que quitaram por cancelamento contábil
-- A cobertura publicada atualmente contempla os 1.794 municípios do Nordeste — curvas de Autonomia podem exigir recalibração antes de eventual expansão para outros recortes
+- `Autonomia` agora usa calibração regional para as 5 macrorregiões brasileiras; ajustes finos por UF podem ser necessários à medida que a cobertura nacional amadurecer

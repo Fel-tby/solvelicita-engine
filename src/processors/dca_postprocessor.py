@@ -3,7 +3,7 @@ dca_postprocessor.py
 Le int_autonomia_base do BigQuery.
 Calcula:
   - autonomia_media   : media 2020-2024 por municipio
-  - autonomia_critica : True se autonomia_media < 0.08
+  - autonomia_critica : True se autonomia_media < limiar regional da UF
 Atualiza intermediate.int_dca_postprocessed via BigQuery MERGE.
 """
 
@@ -15,7 +15,7 @@ import pandas as pd
 if __package__ in (None, ""):
     sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
 
-from src.scorers.config import LIMIAR_AUTONOMIA_CRIT
+from src.scorers.config import get_limiar_autonomia_crit
 from src.utils.bigquery_loader import (
     get_bigquery_project,
     merge_dataframe_to_table,
@@ -44,8 +44,9 @@ def _bq(table: str, uf: str) -> pd.DataFrame:
     return query_to_dataframe(query, strict=True)
 
 
-def _calcular_autonomia(df: pd.DataFrame) -> pd.DataFrame:
+def _calcular_autonomia(df: pd.DataFrame, uf: str) -> pd.DataFrame:
     """Grain de saida: cod_ibge."""
+    limiar_critico = get_limiar_autonomia_crit(uf)
     agg = (
         df.groupby("cod_ibge")
         .agg(autonomia_media=("autonomia_raw", "mean"))
@@ -53,7 +54,7 @@ def _calcular_autonomia(df: pd.DataFrame) -> pd.DataFrame:
     )
     agg["autonomia_critica"] = (
         agg["autonomia_media"].notna() &
-        (agg["autonomia_media"] < LIMIAR_AUTONOMIA_CRIT)
+        (agg["autonomia_media"] < limiar_critico)
     )
     return agg
 
@@ -95,7 +96,7 @@ def run(uf: str = "PB") -> None:
     df = _bq("int_autonomia_base", uf=uf)
     df["cod_ibge"] = df["cod_ibge"].astype("Int64")
 
-    df_m = _calcular_autonomia(df)
+    df_m = _calcular_autonomia(df, uf=uf)
     print(f"   {df_m['autonomia_media'].notna().sum()} municipios com autonomia_media")
     print(f"   {df_m['autonomia_critica'].sum()} com autonomia_critica")
 

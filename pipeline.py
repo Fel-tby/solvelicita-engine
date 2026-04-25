@@ -12,7 +12,7 @@ Uso:
     python pipeline.py --uf ALL --mode incremental --steps collect,dbt,process,score,sync --collectors cauc --yes
 
 Regras para --uf ALL:
-    - sem collect: aceita apenas process, score e sync
+    - sem collect: aceita apenas process, score e sync, usando as UFs descobertas no workspace
     - com collect e sem --collectors: preserva o modo legado CAUC-only
     - com collect e com --collectors: ALL real para as UFs oficiais do Nordeste
 """
@@ -31,12 +31,13 @@ COLETORES_VALIDOS = pipeline_jobs.COLETORES_VALIDOS
 COLETORES_ORDEM = pipeline_jobs.COLETORES_ORDEM
 ALL_UFS_TOKEN = pipeline_jobs.ALL_UFS_TOKEN
 ALL_UFS_NORDESTE = pipeline_jobs.ALL_UFS_NORDESTE
+ALL_UFS_BRASIL = pipeline_jobs.ALL_UFS_BRASIL
 PIPELINE_VERSION = "v9.1"
 
 
 def selecionar_uf() -> str:
     print()
-    print("  UF alvo (ex: PB, CE, RN, ALL=Nordeste). Enter = PB")
+    print("  UF alvo (ex: PB, CE, RN, ALL). Enter = PB")
     uf = input("  UF: ").strip().upper()
     return uf if uf else "PB"
 

@@ -6,6 +6,7 @@ source="bigquery" → lê mart.mart_indicadores_municipios
 
 import sys
 from pathlib import Path
+import unicodedata
 
 import pandas as pd
 import numpy as np
@@ -16,7 +17,7 @@ if __package__ in (None, ""):
 
 from src.utils.paths import get_artifact_path
 from src.scorers import config as cfg_module
-from src.scorers.config import N_ANOS_CRONICOS_CAP_MEDIO, N_ANOS
+from src.scorers.config import N_ANOS_CRONICOS_CAP_MEDIO, N_ANOS, get_limiar_autonomia_crit
 from src.scorers.lliq_scorer import calcular as calcular_lliq, pontuar_lliq
 from src.scorers.eorcam_scorer import calcular as calcular_eorcam, pontuar_eorcam
 from src.scorers.qsiconfi_scorer import calcular as calcular_qsiconfi
@@ -26,6 +27,12 @@ from src.scorers.rproc_scorer import calcular as calcular_rproc, pontuar_rproc_c
 from src.engine.classifier import classificar, ORDEM_SORT
 
 VERSION = "v7.0"
+
+
+def _ascii_console(text: object) -> str:
+    normalized = unicodedata.normalize("NFKD", str(text))
+    ascii_text = normalized.encode("ascii", "ignore").decode("ascii")
+    return " ".join(ascii_text.split())
 
 
 # Carga CSV (legado)
@@ -163,12 +170,12 @@ def _carregar_bq(uf: str, *, strict_bigquery: bool = False) -> pd.DataFrame:
     # Exportacao local de auditoria do mart carregado do BQ.
     csv_mart = get_artifact_path(uf, "mart_indicadores")
     df.to_csv(csv_mart, index=False)
-    print(f"  💾 Mart exportado local: {csv_mart.name}")
+    print(f"  Mart exportado local: {csv_mart.name}")
 
     if "ccauc" in df.columns:
         csv_cauc = get_artifact_path(uf, "cauc_situacao")
         df[["cod_ibge", "ccauc"]].to_csv(csv_cauc, index=False)
-        print(f"  💾 CAUC exportado local: {csv_cauc.name}")
+        print(f"  CAUC exportado local: {csv_cauc.name}")
 
     # Tipos — BQ retorna correto mas colunas com NULL viram object no pandas
     for col in ["eorcam_raw", "lliq_raw", "autonomia_media", "rproc_pct_atual",
@@ -253,8 +260,19 @@ def run(
           f"Aut={pesos['autonomia']} | RPproc={pesos['rproc']}")
     print("=" * 65)
 
-    print(f"\n📂 Carregando dados (source={source_label})...")
+    print(f"\nCarregando dados (source={source_label})...")
     df = _carregar_bq(uf, strict_bigquery=strict_bigquery) if source == "bigquery" else _carregar_csv(uf)
+
+    for col in [
+        "contrib_lliq",
+        "contrib_eorcam",
+        "contrib_qsiconfi",
+        "contrib_ccauc",
+        "contrib_autonomia",
+        "contrib_rproc",
+    ]:
+        if col not in df.columns:
+            df[col] = 0.0
 
     # score
     df["score_base"] = (
@@ -278,7 +296,14 @@ def run(
 
     df["dado_suspeito"] = df.get("dado_suspeito_lliq", pd.Series(False, index=df.index)).fillna(False)
     if "autonomia_critica" not in df.columns:
-        df["autonomia_critica"] = df["autonomia_media"].notna() & (df["autonomia_media"] < 0.08)
+        if "autonomia_media" in df.columns:
+            limiar_autonomia = get_limiar_autonomia_crit(uf)
+            df["autonomia_critica"] = (
+                df["autonomia_media"].notna() &
+                (df["autonomia_media"] < limiar_autonomia)
+            )
+        else:
+            df["autonomia_critica"] = False
 
     df["classificacao"] = df.apply(
         lambda r: classificar(r["score"], r["anos_entregues"], r["n_anos_cronicos"]), axis=1
@@ -286,15 +311,17 @@ def run(
 
     # diagnóstico
     stats = df["score"].dropna()
-    print("\n🔍 Distribuição de risco:")
-    print(df["classificacao"].value_counts().to_string())
+    print("\nDistribuicao de risco:")
+    classif_counts = df["classificacao"].value_counts()
+    classif_counts.index = [_ascii_console(idx) for idx in classif_counts.index]
+    print(classif_counts.to_string())
     print(f"\n  Score médio   : {stats.mean():.1f}")
     print(f"  Score mediano : {stats.median():.1f}")
     print(f"  Score mínimo  : {stats.min():.1f}")
     print(f"  Score máximo  : {stats.max():.1f}")
     n_cap_rproc = (df["n_anos_cronicos"] >= N_ANOS_CRONICOS_CAP_MEDIO).sum()
     print(f"  Cap RPcrônico : {n_cap_rproc} municípios")
-    print(f"  Pen lliq parc : {(df['pen_lliq_parcial'] < 0).sum()} (−5 pts)")
+    print(f"  Pen lliq parc : {(df['pen_lliq_parcial'] < 0).sum()} (-5 pts)")
 
     # exportação
     OUT_COLS = [
@@ -324,7 +351,7 @@ def run(
     outfile = get_artifact_path(uf, "score_municipios_pncp")
     df_out.to_csv(outfile, index=False, encoding="utf-8-sig")
 
-    print(f"\n✅ Score calculado : {df_out['score'].notna().sum()} municípios")
+    print(f"\nScore calculado : {df_out['score'].notna().sum()} municipios")
     print(f"   Versão          : {VERSION}")
     print(f"   Salvo em        : {outfile}")
 

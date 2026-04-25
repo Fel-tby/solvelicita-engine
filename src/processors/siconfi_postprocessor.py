@@ -182,6 +182,24 @@ def _lliq(df: pd.DataFrame, df_pop: pd.DataFrame) -> pd.DataFrame:
     return pd.DataFrame(records)
 
 
+def _lliq_vazio(codigos) -> pd.DataFrame:
+    codigos_unicos = pd.Series(codigos, dtype="Int64").dropna().drop_duplicates().tolist()
+    return pd.DataFrame(
+        [
+            {
+                "cod_ibge": cod_ibge,
+                "lliq_raw": None,
+                "lliq_parcial": False,
+                "dias_atraso": None,
+                "decay_fator": None,
+                "dado_suspeito_lliq": False,
+                "dado_defasado": False,
+            }
+            for cod_ibge in codigos_unicos
+        ]
+    )
+
+
 def _merge_bq(df: pd.DataFrame, uf: str) -> None:
     project = _project()
     table_ref = f"{project}.{DATASET_I}.int_siconfi_postprocessed"
@@ -228,13 +246,19 @@ def run(uf: str = "PB") -> None:
 
     print("\n-- Lendo int_lliq_base...")
     df_lliq = _bq("int_lliq_base", uf=uf)
-    df_lliq["cod_ibge"] = df_lliq["cod_ibge"].astype("Int64")
 
     print("\n-- Buscando populacao do mart...")
     df_pop = _bq_mart_pop()
     df_pop["cod_ibge"] = df_pop["cod_ibge"].astype("Int64")
 
-    df_lliq_m = _lliq(df_lliq, df_pop)
+    if df_lliq.empty or "cod_ibge" not in df_lliq.columns:
+        df_lliq_m = _lliq_vazio(df_eorcam_m["cod_ibge"] if "cod_ibge" in df_eorcam_m.columns else [])
+    else:
+        df_lliq["cod_ibge"] = df_lliq["cod_ibge"].astype("Int64")
+        df_lliq_m = _lliq(df_lliq, df_pop)
+        if df_lliq_m.empty or "lliq_raw" not in df_lliq_m.columns:
+            df_lliq_m = _lliq_vazio(df_eorcam_m["cod_ibge"] if "cod_ibge" in df_eorcam_m.columns else [])
+
     print(f"   {df_lliq_m['lliq_raw'].notna().sum()} municipios com lliq_raw")
     print(f"   {df_lliq_m['lliq_parcial'].sum()} com lliq_parcial (pre-RPNP)")
     print(f"   {df_lliq_m['dado_defasado'].sum()} com dado_defasado")

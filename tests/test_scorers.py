@@ -16,6 +16,7 @@ Rodar:
 
 import sys
 from pathlib import Path
+from io import StringIO
 import pandas as pd
 import pytest
 
@@ -23,28 +24,68 @@ ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT / "src"))
 
 from scorers.lliq_scorer     import pontuar_lliq
+from scorers.autonomia_scorer import pontuar_autonomia
 from scorers.eorcam_scorer   import pontuar_eorcam, calcular as calcular_eorcam
 from scorers.cauc_scorer     import pontuar_ccauc,  calcular as calcular_cauc
 from scorers.qsiconfi_scorer import calcular as calcular_qsiconfi
 from scorers.rproc_scorer    import pontuar_rproc_cronico, calcular as calcular_rproc
 from scorers.config          import PESOS
 
-FIXTURES = Path(__file__).parent / "fixtures"
+SICONFI_SAMPLE_CSV = """cod_ibge,instituicao,ano,populacao,receita_prevista,receita_realizada,despesa_liquidada,rrestos_nao_processados,rrestos_processados,dcl_apos_rp_total,dcl_apos_rp_rpps,dcl_pre_rp_total,dcl_pre_rp_rpps,periodicidade_rgf,periodo_rgf,entregou_rreo,eorcam,rrestos_nproc_pct,rproc_pct,deficit_pct,lliq,lliq_bruta,lliq_parcial
+2500205,Aguiar,2020,5026,31228823.06,22154403.54,24663269.82,50881.25,37361.38,,,,,Q,3,True,70.94,0.23,0.17,11.32,,,False
+2500205,Aguiar,2021,5026,27170172.0,21985892.18,22006809.82,31620.65,31811.38,,,,,Q,3,True,80.92,0.14,0.14,0.1,,,False
+2500205,Aguiar,2022,5026,39194503.14,29941928.76,27016311.88,391164.5,75359.94,,,,,Q,3,True,76.39,1.31,0.25,-9.77,,,False
+2500205,Aguiar,2023,5026,44724868.67,33235145.7,29774567.73,594388.08,,5407772.21,,5466160.8,,Q,3,True,74.31,1.79,,-10.41,0.162712,5407772.21,False
+2500205,Aguiar,2024,5026,38120821.0,48479451.51,49384324.95,594388.08,,4112344.08,,4175182.27,,Q,3,True,127.17,1.23,,1.87,0.084827,4112344.08,False
+2500205,Aguiar,2025,5026,49831389.0,56853298.56,53342475.24,,,7934302.96,,8272496.36,,Q,3,True,114.09,,,-6.18,0.139557,7934302.96,False
+2500304,Alagoa Grande,2020,26655,55710132.5,62570485.56,63225260.48,29895.33,2554758.34,,,,,Q,3,True,112.31,0.05,4.08,1.05,,,False
+2500304,Alagoa Grande,2021,26655,57381436.35,70466566.45,66158320.86,30085.33,2740314.77,,,,,Q,3,True,122.8,0.04,3.89,-6.11,,,False
+2500304,Alagoa Grande,2022,26655,60250508.16,92007567.87,76925696.88,32199.63,2879015.2,,,,,Q,3,True,152.71,0.03,3.13,-16.39,,,False
+2500304,Alagoa Grande,2023,26655,98707630.0,97772595.43,92539710.44,1462200.15,2917029.47,23398176.92,,24381143.91,,Q,3,True,99.05,1.5,2.98,-5.35,0.239312,23398176.92,False
+2500304,Alagoa Grande,2024,26655,104423000.0,119311499.15,137149400.28,2348.3,1880323.09,8007645.59,,8010515.59,,Q,3,True,114.26,0.0,1.58,14.95,0.067115,8007645.59,False
+2500304,Alagoa Grande,2025,26655,132247698.64,139896516.24,127856748.86,2870.0,53572.17,26510203.86,,26639511.51,,Q,3,True,105.78,0.0,0.04,-8.61,0.189499,26510203.86,False
+2500502,Alagoinha,2020,14140,59229509.52,41021632.09,38834200.33,36681.18,105378.95,,,,,Q,3,True,69.26,0.09,0.26,-5.33,,,False
+2500502,Alagoinha,2021,14140,57313255.11,45461651.43,47644113.35,453218.18,171762.1,,,,,Q,3,True,79.32,1.0,0.38,4.8,,,False
+2500502,Alagoinha,2022,14140,63136104.17,51082030.59,44528676.79,522800.53,2480287.5,,,,,Q,3,True,80.91,1.02,4.86,-12.83,,,False
+2500502,Alagoinha,2023,14140,79603969.33,56209570.2,57832931.26,317684.87,1570531.61,33760334.14,,33816554.34,,Q,3,True,70.61,0.57,2.79,2.89,0.600615,33760334.14,False
+2500502,Alagoinha,2024,14140,102118055.65,82145201.16,85164560.24,133107.59,2367628.74,26190867.17,,26209047.27,,Q,3,True,80.44,0.16,2.88,3.68,0.318836,26190867.17,False
+2500502,Alagoinha,2025,14140,91299956.0,84669721.33,85241931.39,313661.85,911040.34,20051419.31,,20125610.51,,Q,3,True,92.74,0.37,1.08,0.68,0.236819,20051419.31,False
+2500106,Água Branca,2020,12000,,,,,,,,,,,,False,,,,,,,False
+2500106,Água Branca,2021,12000,,,,,,,,,,,,False,,,,,,,False
+2500106,Água Branca,2022,12000,,,,,,,,,,,,False,,,,,,,False
+2500106,Água Branca,2023,12000,,,,,,,,,,,,False,,,,,,,False
+2500106,Água Branca,2024,12000,,,,,,,,,,,,False,,,,,,,False
+2500106,Água Branca,2025,12000,,,,,,,,,,,,False,,,,,,,False
+"""
+
+CAUC_SAMPLE_CSV = """cod_ibge,municipio,bloqueado,qtd_pendencias,pendencias,data_pesquisa,data_coleta,fonte
+2500106,Água Branca,True,10,Regularidade Fiscal (RFB) | SIOPS (Saúde) | SIOPE (Educação) | SIOPE Complementar | SICONV/TRANSFEREGOV Prestação de Contas | CADIN | SICONFI RREO | SICONFI PCASP | SICONFI DCASP | SICONFI MCASP,06/03/2026,2026-03-08,CKAN-TesouroTransparente
+2500205,Aguiar,True,9,Regularidade Fiscal (RFB) | Regularidade Trabalhista (TST) | SIOPE Complementar | SICONV/TRANSFEREGOV Prestação de Contas | CADIN | SICONFI RREO | SICONFI PCASP | SICONFI DCASP | SICONFI MCASP,06/03/2026,2026-03-08,CKAN-TesouroTransparente
+2500304,Alagoa Grande,False,0,REGULAR,06/03/2026,2026-03-08,CKAN-TesouroTransparente
+2500502,Alagoinha,True,8,Regularidade Trabalhista (TST) | SIOPE Complementar | CADIN | SISTN (Garantias) | SICONFI RREO | SICONFI PCASP | SICONFI DCASP | SICONFI MCASP,06/03/2026,2026-03-08,CKAN-TesouroTransparente
+"""
+
+MUNICIPIOS_SAMPLE_CSV = """cod_ibge,ente,populacao,cnpj
+2500106,Água Branca,12000,08098206000116
+2500205,Aguiar,5026,08098207000172
+2500304,Alagoa Grande,27000,08098208000128
+2500502,Alagoinha,8000,08098210000110
+"""
 
 
 # ── Helpers ───────────────────────────────────────────────────────────────────
 
 def carregar_siconfi() -> pd.DataFrame:
-    df = pd.read_csv(FIXTURES / "siconfi_sample.csv", dtype={"cod_ibge": str})
+    df = pd.read_csv(StringIO(SICONFI_SAMPLE_CSV), dtype={"cod_ibge": str})
     df["entregou_rreo"] = df["entregou_rreo"].astype(str).str.lower() == "true"
     df["lliq_parcial"]  = df["lliq_parcial"].astype(str).str.lower() == "true"
     return df
 
 def carregar_cauc() -> pd.DataFrame:
-    return pd.read_csv(FIXTURES / "cauc_sample.csv", dtype={"cod_ibge": str})
+    return pd.read_csv(StringIO(CAUC_SAMPLE_CSV), dtype={"cod_ibge": str})
 
 def carregar_municipios() -> pd.DataFrame:
-    return pd.read_csv(FIXTURES / "municipios_sample.csv", dtype={"cod_ibge": str})
+    return pd.read_csv(StringIO(MUNICIPIOS_SAMPLE_CSV), dtype={"cod_ibge": str})
 
 
 # ══════════════════════════════════════════════════════════════════════════════
@@ -254,6 +295,25 @@ class TestQsiconfi:
         result = calcular_qsiconfi(carregar_siconfi())
         assert (result["contrib_qsiconfi"] >= 0).all()
         assert (result["contrib_qsiconfi"] <= PESOS["qsiconfi"]).all()
+
+
+class TestAutonomiaRegional:
+
+    def test_mesma_autonomia_recebe_nota_mais_alta_no_nordeste_que_no_sul(self):
+        resultado_ne = pontuar_autonomia(0.08, 8_000, "PB")
+        resultado_sul = pontuar_autonomia(0.08, 8_000, "RS")
+
+        assert resultado_ne is not None
+        assert resultado_sul is not None
+        assert resultado_ne > resultado_sul
+
+    def test_mesma_autonomia_recebe_nota_mais_alta_no_nordeste_que_no_sudeste(self):
+        resultado_ne = pontuar_autonomia(0.08, 30_000, "PB")
+        resultado_se = pontuar_autonomia(0.08, 30_000, "SP")
+
+        assert resultado_ne is not None
+        assert resultado_se is not None
+        assert resultado_ne > resultado_se
 
 
 # ══════════════════════════════════════════════════════════════════════════════

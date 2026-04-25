@@ -21,7 +21,7 @@ def test_dca_postprocessor_uses_loader_for_query_and_merge(monkeypatch):
             [
                 {"cod_ibge": 2800100, "autonomia_raw": 0.05},
                 {"cod_ibge": 2800100, "autonomia_raw": 0.07},
-                {"cod_ibge": 2800209, "autonomia_raw": 0.12},
+                {"cod_ibge": 2800209, "autonomia_raw": 0.10},
             ]
         )
 
@@ -40,7 +40,7 @@ def test_dca_postprocessor_uses_loader_for_query_and_merge(monkeypatch):
     monkeypatch.setattr(dca_postprocessor, "get_artifact_path", fake_get_artifact_path)
 
     try:
-        dca_postprocessor.run("SE")
+        dca_postprocessor.run("SP")
     finally:
         shutil.rmtree(temp_root, ignore_errors=True)
 
@@ -48,13 +48,13 @@ def test_dca_postprocessor_uses_loader_for_query_and_merge(monkeypatch):
     query, strict = calls["queries"][0]
     assert strict is True
     assert "`proj_teste.intermediate.int_autonomia_base`" in query
-    assert "WHERE m.uf = 'SE'" in query
+    assert "WHERE m.uf = 'SP'" in query
 
     merged_df, kwargs = calls["merge"]
     assert kwargs["table_ref"] == "proj_teste.intermediate.int_dca_postprocessed"
     assert kwargs["temp_table_ref"] == "proj_teste.mart._tmp_dca_post"
     assert kwargs["key_cols"] == ["cod_ibge"]
-    assert merged_df["uf"].tolist() == ["SE", "SE"]
+    assert merged_df["uf"].tolist() == ["SP", "SP"]
     assert merged_df["autonomia_critica"].tolist() == [True, False]
 
 

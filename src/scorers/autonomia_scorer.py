@@ -8,7 +8,6 @@ import pandas as pd
 import numpy as np
 from src.utils.paths import get_artifact_path
 from src.scorers import config as cfg_module
-from src.scorers.config import LIMIAR_AUTONOMIA_CRIT
 
 
 def _porte(pop: int) -> str:

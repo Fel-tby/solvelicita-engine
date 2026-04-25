@@ -188,3 +188,10 @@ blocos.md
 blocos_refact.md
 plans/
 AGENTS.md
+
+# Baselines locais de validação
+data/baseline_*_pre_dbt_opt/
+dbt/baseline_target_pre_dbt_opt/
+
+# Arquivos temporários de diagnóstico
+tmp/

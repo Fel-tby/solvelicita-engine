@@ -61,9 +61,12 @@ from scipy import stats
 
 SRC_ROOT = Path(__file__).resolve().parent.parent
 ROOT = SRC_ROOT.parent
-sys.path.insert(0, str(SRC_ROOT))
+for candidate in (ROOT, SRC_ROOT):
+    candidate_str = str(candidate)
+    if candidate_str not in sys.path:
+        sys.path.insert(0, candidate_str)
 
-from utils.paths import get_paths
+from src.utils.paths import get_paths
 
 ANALYSIS_ROOT = ROOT / "data" / "analysis"
 ANALYSIS_ROOT.mkdir(parents=True, exist_ok=True)

@@ -90,3 +90,89 @@ def test_run_bigquery_strict_propagates_runtime_error(monkeypatch):
 
     with pytest.raises(RuntimeError, match="BigQuery indisponivel"):
         solvency.run(uf="PB", source="bigquery", strict_bigquery=True)
+
+
+def test_run_nao_vira_sem_dados_quando_rproc_esta_ausente_mas_eorcam_existe(monkeypatch):
+    df_base = pd.DataFrame(
+        [
+            {
+                "cod_ibge": "3100104",
+                "ente": "Abadia dos Dourados",
+                "populacao": 6345,
+                "anos_entregues": 5,
+                "n_anos_cronicos": 0,
+                "eorcam_raw": 89.34,
+                "lliq_raw": 0.16,
+                "rproc_pct_atual": pd.NA,
+                "autonomia_media": 0.043,
+                "ccauc": 0.0,
+                "contrib_lliq": 22.0,
+                "contrib_eorcam": 14.0,
+                "contrib_qsiconfi": 12.5,
+                "contrib_ccauc": 10.0,
+                "contrib_autonomia": 5.5,
+                "contrib_rproc": 0.0,
+                "lliq_parcial": False,
+                "decay_fator": 1.0,
+                "dado_suspeito_lliq": False,
+                "dado_defasado": False,
+                "pendencias": "REGULAR",
+                "pendencias_cauc_json": "[]",
+            }
+        ]
+    )
+
+    monkeypatch.setattr(solvency, "_carregar_bq", lambda uf, strict_bigquery=False: df_base.copy())
+    monkeypatch.setattr(
+        pd.DataFrame,
+        "to_csv",
+        lambda self, *args, **kwargs: None,
+        raising=False,
+    )
+
+    resultado = solvency.run(uf="MG", source="bigquery", strict_bigquery=True)
+
+    assert pd.notna(resultado.loc[0, "score"])
+    assert "Sem Dados" not in str(resultado.loc[0, "classificacao"])
+
+
+def test_run_tolera_ausencia_de_autonomia_sem_quebrar(monkeypatch):
+    df_base = pd.DataFrame(
+        [
+            {
+                "cod_ibge": "5300108",
+                "ente": "Brasília",
+                "populacao": 2996899,
+                "anos_entregues": 5,
+                "n_anos_cronicos": 0,
+                "eorcam_raw": 91.54,
+                "lliq_raw": pd.NA,
+                "rproc_pct_atual": 0.30,
+                "ccauc": 0.0,
+                "contrib_lliq": 0.0,
+                "contrib_eorcam": 15.0,
+                "contrib_qsiconfi": 12.5,
+                "contrib_ccauc": 10.0,
+                "contrib_rproc": 15.0,
+                "lliq_parcial": False,
+                "decay_fator": 1.0,
+                "dado_suspeito_lliq": False,
+                "dado_defasado": False,
+                "pendencias": "REGULAR",
+                "pendencias_cauc_json": "[]",
+            }
+        ]
+    )
+
+    monkeypatch.setattr(solvency, "_carregar_bq", lambda uf, strict_bigquery=False: df_base.copy())
+    monkeypatch.setattr(
+        pd.DataFrame,
+        "to_csv",
+        lambda self, *args, **kwargs: None,
+        raising=False,
+    )
+
+    resultado = solvency.run(uf="DF", source="bigquery", strict_bigquery=True)
+
+    assert pd.notna(resultado.loc[0, "score"])
+    assert bool(resultado.loc[0, "autonomia_critica"]) is False

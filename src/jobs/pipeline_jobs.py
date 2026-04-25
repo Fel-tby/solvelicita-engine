@@ -23,6 +23,11 @@ COLETORES_VALIDOS = {"municipios", "cauc", "siconfi", "dca", "pncp"}
 COLETORES_ORDEM = ["municipios", "cauc", "siconfi", "dca", "pncp"]
 ALL_UFS_TOKEN = "ALL"
 ALL_UFS_NORDESTE = ["AL", "BA", "CE", "MA", "PB", "PE", "PI", "RN", "SE"]
+ALL_UFS_BRASIL = [
+    "AC", "AL", "AM", "AP", "BA", "CE", "DF", "ES", "GO",
+    "MA", "MG", "MS", "MT", "PA", "PB", "PE", "PI", "PR",
+    "RJ", "RN", "RO", "RR", "RS", "SC", "SE", "SP", "TO",
+]
 
 
 @dataclass(frozen=True)
@@ -538,10 +543,10 @@ def validate_all_uf_job(request: ValidateAllUfInput) -> ValidateAllUfResult:
             for_sync_only=(request.etapas == {"sync"}),
         )
     )
-    ufs = filter_ufs_all(discovered.ufs)
+    ufs = sorted(set(discovered.ufs))
     if not ufs:
         raise ValueError(
-            "  Erro: nenhuma UF do Nordeste foi encontrada no workspace para --uf ALL."
+            "  Erro: nenhuma UF elegivel foi encontrada no workspace para --uf ALL."
         )
 
     return ValidateAllUfResult(ufs=ufs, all_legado=False)

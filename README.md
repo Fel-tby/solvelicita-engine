@@ -10,7 +10,7 @@
   <br>
   <a href="tests/"><img src="https://img.shields.io/badge/testes-pytest-0A9EDC?logo=pytest&logoColor=white" alt="pytest"></a>
   <a href="docs/METODOLOGIA.md"><img src="https://img.shields.io/badge/dados-100%25%20públicos-2ea44f" alt="Dados Públicos"></a>
-  <a href="LICENSE"><img src="https://img.shields.io/badge/Licen%C3%A7a-AGPL--3.0-blue.svg" alt="Licença AGPL-3.0"></a>
+  <a href="LICENSE"><img src="https://img.shields.io/badge/Licença-AGPL--3.0-blue.svg" alt="Licença AGPL-3.0"></a>
 </p>
 
 ---
@@ -52,9 +52,9 @@ Além do score numérico, dois caps de classificação operam de forma independe
 
 ---
 
-## Validação empírica
+## Backtest do score
 
-A metodologia foi validada por backtest walk-forward: o score é calculado em um ano e comparado com o comportamento fiscal observado no ano seguinte, usando a ocorrência futura de Restos a Pagar crônicos como desfecho.
+O score é validado por um backtest walk-forward reproduzível, versionado em [`src/analysis/backtest_validacao.py`](src/analysis/backtest_validacao.py): o score é calculado em um ano e comparado com o comportamento fiscal observado no ano seguinte, usando a ocorrência futura de Restos a Pagar crônicos como desfecho.
 
 Na validação geral documentada, o modelo operacional apresentou:
 
@@ -64,7 +64,14 @@ Na validação geral documentada, o modelo operacional apresentou:
 | AUC-ROC | **0.7443** |
 | Spearman | **-0.3827** |
 
-O teste sem o componente `RPproc` também preserva discriminação acima do acaso, o que indica que o modelo não depende de uma única variável para ordenar risco. Resultados, limitações e testes de sensibilidade estão em [`docs/VALIDACAO.md`](docs/VALIDACAO.md).
+O teste sem o componente `RPproc` também preserva discriminação acima do acaso, o que indica que o modelo não depende de uma única variável para ordenar risco. Os dois recortes podem ser executados diretamente no repositório:
+
+```bash
+python src/analysis/backtest_validacao.py --geral --excluir-t0 2020
+python src/analysis/backtest_validacao.py --geral --sem-rproc --excluir-t0 2020
+```
+
+Resultados, limitações e testes de sensibilidade estão em [`docs/VALIDACAO.md`](docs/VALIDACAO.md).
 
 ---
 
@@ -230,3 +237,19 @@ cd dbt && dbt test
 venv\Scripts\activate
 pytest -v
 ```
+
+## GitHub Actions
+
+O repositório também possui automações em GitHub Actions:
+
+- `CI`: roda `pytest` em `push` e `pull_request`.
+- `Pipeline Nacional Manual`: dispara a pipeline em matrix para as 27 UFs por `workflow_dispatch`.
+- `Pipeline Incremental Semanal Nacional`: atualização incremental semanal para todas as UFs.
+- `Pipeline CAUC Diario Nacional`: atualização diária de CAUC para todas as UFs.
+
+Os workflows de pipeline reutilizam um executor único por UF e dependem dos secrets:
+
+- `GCP_PROJECT_ID`
+- `GCP_SA_KEY`
+- `SUPABASE_URL`
+- `SUPABASE_KEY`

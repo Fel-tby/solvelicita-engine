@@ -1,40 +1,45 @@
-name: Pipeline Manual Custom
+name: Pipeline State Runner
 
 on:
-  workflow_dispatch:
+  workflow_call:
     inputs:
       uf:
-        description: "UF alvo (ex.: PB, CE, RN ou ALL legado/custom)"
+        description: "UF alvo"
         required: true
-        default: "ALL"
+        type: string
       mode:
         description: "Modo de coleta"
-        required: true
+        required: false
         default: "incremental"
-        type: choice
-        options:
-          - incremental
-          - full
+        type: string
       steps:
         description: "Etapas separadas por virgula"
-        required: true
+        required: false
         default: "collect,dbt,process,score,sync"
+        type: string
       collectors:
-        description: "Coletores separados por virgula; deixe vazio para legado ALL-CAUC"
+        description: "Coletores separados por virgula"
         required: false
         default: ""
+        type: string
+      timeout_minutes:
+        description: "Timeout do job em minutos"
+        required: false
+        default: 360
+        type: number
+      artifact_prefix:
+        description: "Prefixo do artifact"
+        required: false
+        default: "pipeline"
+        type: string
 
 permissions:
   contents: read
 
-concurrency:
-  group: pipeline-dispatch-${{ github.event.inputs.uf }}-${{ github.run_id }}
-  cancel-in-progress: false
-
 jobs:
-  pipeline-dispatch:
+  run-state:
     runs-on: ubuntu-latest
-    timeout-minutes: 360
+    timeout-minutes: ${{ inputs.timeout_minutes }}
     env:
       GCP_PROJECT_ID: ${{ secrets.GCP_PROJECT_ID }}
       SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
@@ -53,13 +58,13 @@ jobs:
           python-version: "3.11"
           gcp-sa-key: ${{ secrets.GCP_SA_KEY }}
 
-      - name: Run manual pipeline
+      - name: Run pipeline for state
         shell: bash
         env:
-          INPUT_UF: ${{ github.event.inputs.uf }}
-          INPUT_MODE: ${{ github.event.inputs.mode }}
-          INPUT_STEPS: ${{ github.event.inputs.steps }}
-          INPUT_COLLECTORS: ${{ github.event.inputs.collectors }}
+          INPUT_UF: ${{ inputs.uf }}
+          INPUT_MODE: ${{ inputs.mode }}
+          INPUT_STEPS: ${{ inputs.steps }}
+          INPUT_COLLECTORS: ${{ inputs.collectors }}
         run: |
           cmd=(
             ./venv/bin/python
@@ -80,10 +85,10 @@ jobs:
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: pipeline-dispatch-artifacts
+          name: ${{ inputs.artifact_prefix }}-${{ inputs.uf }}
           path: |
             dbt/logs/
-            data/outputs/
-            data/processed/
-            data/analysis/
+            data/outputs/${{ inputs.uf }}/
+            data/processed/${{ inputs.uf }}/
+            data/analysis/${{ inputs.uf }}/
           if-no-files-found: ignore
