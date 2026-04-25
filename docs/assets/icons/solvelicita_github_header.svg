@@ -1,4 +1,4 @@
-<svg width="1280" height="400" viewBox="0 0 580 181" role="img" xmlns="http://www.w3.org/2000/svg">
+<svg width="1280" height="320" viewBox="0 0 580 145" role="img" xmlns="http://www.w3.org/2000/svg">
   <title>SolveLicita — GitHub Header</title>
 
   <svg x="266" y="23" width="48" height="48" viewBox="0 0 100 100">
@@ -20,16 +20,4 @@
         fill="#4B627D" text-anchor="middle" letter-spacing="1.6">SCORE DE SOLVÊNCIA MUNICIPAL</text>
 
   <line x1="210" y1="131" x2="370" y2="131" stroke="#D7E6F5" stroke-width="1"/>
-
-  <rect x="168" y="143" width="76" height="20" rx="10" fill="#EAF3FC" stroke="#B9D4EE" stroke-width="0.8"/>
-  <text x="206" y="156.5" font-family="system-ui,sans-serif" font-size="9"
-        fill="#185FA5" text-anchor="middle" font-weight="600">Open Data</text>
-
-  <rect x="252" y="143" width="76" height="20" rx="10" fill="#EAF3FC" stroke="#B9D4EE" stroke-width="0.8"/>
-  <text x="290" y="156.5" font-family="system-ui,sans-serif" font-size="9"
-        fill="#185FA5" text-anchor="middle" font-weight="600">Brasil</text>
-
-  <rect x="336" y="143" width="76" height="20" rx="10" fill="#EAF3FC" stroke="#B9D4EE" stroke-width="0.8"/>
-  <text x="374" y="156.5" font-family="system-ui,sans-serif" font-size="9"
-        fill="#185FA5" text-anchor="middle" font-weight="600">Municípios</text>
 </svg>

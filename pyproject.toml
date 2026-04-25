@@ -3,7 +3,7 @@ requires = ["setuptools>=69", "wheel"]
 build-backend = "setuptools.build_meta"
 
 [project]
-name = "solvelicita"
+name = "solvelicita-engine"
 version = "0.1.0"
 description = "Motor analitico de risco fiscal e score de solvencia municipal."
 readme = "README.md"

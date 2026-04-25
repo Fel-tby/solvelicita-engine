@@ -1,4 +1,4 @@
-name: Pipeline Nacional Manual
+name: Pipeline Nacional Full
 
 on:
   workflow_dispatch:

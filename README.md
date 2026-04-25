@@ -1,25 +1,20 @@
 <p align="center">
-  <img src="docs/assets/icons/solvelicita_github_header.svg" alt="SolveLicita — Score de Solvência Municipal" width="100%">
+  <img src="docs/assets/icons/solvelicita_github_header.svg" alt="SolveLicita Engine — Score de Solvência Municipal" width="100%">
 </p>
 
 <p align="center">
+  <a href="https://github.com/Fel-tby/solvelicita-engine/actions/workflows/ci.yml"><img src="https://github.com/Fel-tby/solvelicita-engine/actions/workflows/ci.yml/badge.svg" alt="Engine CI"></a>
   <a href="https://www.python.org/"><img src="https://img.shields.io/badge/Python-3.11+-3776AB?logo=python&logoColor=white" alt="Python"></a>
   <a href="https://www.getdbt.com/"><img src="https://img.shields.io/badge/dbt-FF694B?logo=dbt&logoColor=white" alt="dbt"></a>
   <a href="https://cloud.google.com/bigquery"><img src="https://img.shields.io/badge/BigQuery-669DF6?logo=googlebigquery&logoColor=white" alt="BigQuery"></a>
-  <a href="https://supabase.com/"><img src="https://img.shields.io/badge/Supabase-3ECF8E?logo=supabase&logoColor=white" alt="Supabase"></a>
-  <br>
-  <a href="tests/"><img src="https://img.shields.io/badge/testes-pytest-0A9EDC?logo=pytest&logoColor=white" alt="pytest"></a>
-  <a href="docs/METODOLOGIA.md"><img src="https://img.shields.io/badge/dados-100%25%20públicos-2ea44f" alt="Dados Públicos"></a>
   <a href="LICENSE"><img src="https://img.shields.io/badge/Licença-AGPL--3.0-blue.svg" alt="Licença AGPL-3.0"></a>
 </p>
 
 ---
 
-## A pergunta
+## Inteligência Fiscal e Solvência
 
-Municípios brasileiros contratam bilhões em fornecimentos por ano. Mas qual prefeitura tem capacidade real de pagar o que contrata?
-
-Essa pergunta não tem resposta pública, padronizada e acessível. Os dados existem, estão nos sistemas do Tesouro Nacional e de compras públicas. Mas, dispersos em relatórios técnicos que exigem conhecimento contábil para interpretar. O **SolveLicita** atua como um motor de análise de risco fiscal e solvência, cruzando esses dados e os transformando em um único número por município.
+Esta aplicação é o componente técnico responsável pela inteligência de dados do ecossistema **SolveLicita**. Sua função é automatizar o ciclo completo de análise de risco fiscal de todos os municípios brasileiros, transformando dados públicos brutos em um Score de Solvência padronizado e acionável. Para isso, o pipeline executa um fluxo contínuo que coleta informações de múltiplas fontes oficiais via APIs, estrutura e consolida registros contábeis complexos através de camadas de modelagem SQL e aplica pós-processadores analíticos em Python para o cálculo final dos indicadores. Essa automação traduz relatórios técnicos dispersos em uma resposta direta sobre a capacidade real de pagamento de cada prefeitura, servindo como a base de dados fundamental para a plataforma web do SolveLicita.
 
 ---
 
@@ -34,7 +29,7 @@ Um **Score de Solvência (0–100)** calculado a partir de seis indicadores fisc
 | Execução Orçamentária | SICONFI / RREO Anexo 01 | **15%** | Aderência entre receita prevista e realizada |
 | Transparência Fiscal | SICONFI | **15%** | Continuidade de entrega de dados públicos |
 | Autonomia Tributária | FINBRA / DCA | **10%** | Dependência do FPM vs receita própria |
-| Bloqueio Federal | CAUC / STN | **10%** | Pendências que bloqueiam repasses federais |
+| Bloqueio Federal | CAUC / STN | **10%** | Pendências que bloqueiam repasses federar |
 
 A fórmula, as curvas de pontuação e as justificativas de cada escolha estão em [`docs/METODOLOGIA.md`](docs/METODOLOGIA.md).
 
@@ -64,7 +59,7 @@ Na validação geral documentada, o modelo operacional apresentou:
 | AUC-ROC | **0.7443** |
 | Spearman | **-0.3827** |
 
-O teste sem o componente `RPproc` também preserva discriminação acima do acaso, o que indica que o modelo não depende de uma única variável para ordenar risco. Os dois recortes podem ser executados diretamente no repositório:
+Os dois recortes podem ser executados diretamente no repositório:
 
 ```bash
 python src/analysis/backtest_validacao.py --geral --excluir-t0 2020
@@ -77,7 +72,7 @@ Resultados, limitações e testes de sensibilidade estão em [`docs/VALIDACAO.md
 
 ## Arquitetura do pipeline
 
-O SolveLicita opera com um fluxo **BigQuery-first**. Os dados públicos são coletados das APIs oficiais, publicados na camada `raw`, estruturados com `dbt`, enriquecidos por pós-processadores Python e consolidados pela engine de score. O resultado pode ser exportado localmente, publicado em snapshots históricos no BigQuery e sincronizado no Supabase para consumo público.
+O fluxo opera com um modelo **BigQuery-first**. Os dados públicos são coletados das APIs oficiais, estruturados com `dbt`, enriquecidos por pós-processadores Python e consolidados. O resultado é publicado em snapshots históricos e sincronizado no Supabase para consumo pela aplicação web do SolveLicita.
 
 ```mermaid
 flowchart LR
@@ -116,7 +111,7 @@ flowchart LR
         direction LR
         SNAP[("BigQuery snapshots")]
         SB[("Supabase")]
-        WEB["Aplicação web"]
+        WEB["Aplicação SolveLicita"]
     end
 
     PL --> INGEST
@@ -127,7 +122,7 @@ flowchart LR
     ENG --> SNAP
     ENG --> CSV
     CSV --> SB
-    SB -. consumo público .-> WEB
+    SB -. consumo .-> WEB
 
     style PL fill:#0f2744,color:#e8f3ff,stroke:#7fc4ff,stroke-width:2px
     style INGEST fill:#12263d,color:#e8f3ff,stroke:#185FA5,stroke-width:2px
@@ -157,14 +152,14 @@ Cada camada tem uma responsabilidade distinta:
 - `staging`, `intermediate` e `mart`: modelagem e consolidação com `dbt`.
 - `processors`: regras complementares em Python.
 - `engine`: cálculo final do score e classificação de risco.
-- `Supabase`: camada pública consumida pela aplicação web.
+- `Supabase`: camada de dados consumida pela aplicação SolveLicita.
 
 ---
 
 ## Estrutura do repositório
 
 ```text
-solvelicita/
+solvelicita-engine/
 ├── dbt/                    # Transformação SQL no data warehouse
 │   ├── models/             # Camadas staging, intermediate e mart
 │   └── dbt_project.yml     # Configuração do projeto dbt
@@ -187,8 +182,8 @@ solvelicita/
 O pipeline pode ser reproduzido com dois ambientes isolados: um para coleta, processamento e score em Python; outro para transformação SQL com `dbt`.
 
 ```bash
-git clone https://github.com/Fel-tby/solvelicita.git
-cd solvelicita
+git clone https://github.com/Fel-tby/solvelicita-engine.git
+cd solvelicita-engine
 
 # Ambiente principal
 python -m venv venv
@@ -240,12 +235,12 @@ pytest -v
 
 ## GitHub Actions
 
-O repositório também possui automações em GitHub Actions:
+O repositório possui automações em GitHub Actions:
 
 - `CI`: roda `pytest` em `push` e `pull_request`.
-- `Pipeline Nacional Manual`: dispara a pipeline em matrix para as 27 UFs por `workflow_dispatch`.
-- `Pipeline Incremental Semanal Nacional`: atualização incremental semanal para todas as UFs.
-- `Pipeline CAUC Diario Nacional`: atualização diária de CAUC para todas as UFs.
+- `Pipeline Nacional Full`: dispara a pipeline em matrix para as 27 UFs por `workflow_dispatch`.
+- `Pipeline Incremental Mensal Nacional`: atualização incremental mensal para todas as UFs.
+- `Pipeline CAUC Semanal Nacional`: atualização semanal de CAUC para todas as UFs.
 
 Os workflows de pipeline reutilizam um executor único por UF e dependem dos secrets:
 
