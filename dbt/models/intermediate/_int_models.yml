@@ -1,6 +1,21 @@
 version: 2
 
 models:
+  - name: int_siconfi_base_anual
+    description: >
+      Base anual consolidada do SICONFI por municipio/ano. Centraliza a leitura
+      pesada de RREO/RGF e alimenta os contratos SICONFI derivados.
+      Grain: (cod_ibge, ano).
+    columns:
+      - name: cod_ibge
+        tests: [not_null]
+      - name: ano
+        tests: [not_null]
+      - name: has_rreo_ultimo_periodo
+        tests: [not_null]
+      - name: has_rgf_regime_prioritario
+        tests: [not_null]
+
   - name: int_eorcam
     description: >
       Execução orçamentária bruta por município/ano (2020–2025).

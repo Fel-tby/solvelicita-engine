@@ -81,7 +81,7 @@ jobs:
 
       - name: Run dbt once
         shell: bash
-        run: ./venv_dbt/bin/dbt run --project-dir dbt --profiles-dir dbt
+        run: ./venv_dbt/bin/dbt run --project-dir dbt --profiles-dir dbt --select int_cauc_gravidade+
 
       - name: Upload dbt logs
         if: always()
