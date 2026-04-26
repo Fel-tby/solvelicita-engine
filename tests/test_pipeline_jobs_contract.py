@@ -68,8 +68,47 @@ def test_validate_all_uf_job_returns_explicit_result_for_legacy_collect_all():
     )
 
     assert isinstance(result, pipeline_jobs.ValidateAllUfResult)
-    assert result.ufs == pipeline_jobs.ALL_UFS_NORDESTE
+    assert result.ufs == pipeline_jobs.ALL_UFS_BRASIL
     assert result.all_legado is True
+
+
+def test_get_ufs_for_region_usa_ordem_oficial():
+    assert pipeline_jobs.normalize_region("centro-oeste") == "CENTRO_OESTE"
+    assert pipeline_jobs.get_ufs_for_region("CENTRO_OESTE") == ["DF", "GO", "MS", "MT"]
+
+
+def test_execute_pipeline_run_region_collect_full_targets_region():
+    calls = []
+
+    deps = pipeline_jobs.PipelineExecutionDeps(
+        prepare_paths=lambda uf: calls.append(("prepare_paths", uf)),
+        run_collect=lambda mode, uf, coletores=None: calls.append(("collect", mode, uf, coletores)),
+        run_collect_legacy_all=lambda ufs: calls.append(("collect_legacy_all", tuple(ufs))),
+        run_collect_all=lambda mode, ufs, coletores: calls.append(
+            ("collect_all", mode, tuple(ufs), tuple(coletores))
+        ),
+        run_dbt=lambda uf: calls.append(("dbt", uf)),
+        run_process=lambda uf: calls.append(("process", uf)),
+        run_score=lambda uf, mode=None: calls.append(("score", uf, mode)),
+        run_sync=lambda uf: calls.append(("sync", uf)),
+    )
+
+    result = pipeline_jobs.execute_pipeline_run(
+        pipeline_jobs.PipelineRunInput(
+            uf=f"{pipeline_jobs.REGION_UF_PREFIX}SUL",
+            region="SUL",
+            mode="full",
+            etapas={"collect"},
+            coletores=["cauc"],
+            root=Path.cwd(),
+        ),
+        deps,
+    )
+
+    assert result.status == "succeeded"
+    assert result.target_ufs == ["PR", "RS", "SC"]
+    assert result.all_legado is False
+    assert calls == [("collect_all", "full", ("PR", "RS", "SC"), ("cauc",))]
 
 
 def test_validate_all_uf_job_sem_collect_usa_todas_as_ufs_descobertas(monkeypatch):

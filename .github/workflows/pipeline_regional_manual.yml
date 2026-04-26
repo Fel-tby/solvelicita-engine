@@ -1,0 +1,101 @@
+name: Pipeline Regional Manual
+
+on:
+  workflow_dispatch:
+    inputs:
+      region:
+        description: "Regiao alvo"
+        required: true
+        default: "NORDESTE"
+        type: choice
+        options:
+          - NORTE
+          - NORDESTE
+          - CENTRO_OESTE
+          - SUDESTE
+          - SUL
+      mode:
+        description: "Modo de coleta"
+        required: true
+        default: "incremental"
+        type: choice
+        options:
+          - incremental
+          - full
+      steps:
+        description: "Etapas separadas por virgula"
+        required: true
+        default: "collect"
+      collectors:
+        description: "Coletores separados por virgula"
+        required: false
+        default: "municipios,cauc,siconfi,dca,pncp"
+      max_parallel:
+        description: "Quantidade maxima de UFs em paralelo"
+        required: true
+        default: "4"
+        type: choice
+        options:
+          - "2"
+          - "3"
+          - "4"
+          - "6"
+
+permissions:
+  contents: read
+
+concurrency:
+  group: pipeline-regional-manual-${{ github.event.inputs.region }}-${{ github.run_id }}
+  cancel-in-progress: false
+
+jobs:
+  resolve-region:
+    runs-on: ubuntu-latest
+    outputs:
+      ufs: ${{ steps.region.outputs.ufs }}
+    steps:
+      - name: Resolve region matrix
+        id: region
+        shell: bash
+        env:
+          INPUT_REGION: ${{ github.event.inputs.region }}
+        run: |
+          case "$INPUT_REGION" in
+            NORTE)
+              ufs='["AC","AM","AP","PA","RO","RR","TO"]'
+              ;;
+            NORDESTE)
+              ufs='["AL","BA","CE","MA","PB","PE","PI","RN","SE"]'
+              ;;
+            CENTRO_OESTE)
+              ufs='["DF","GO","MS","MT"]'
+              ;;
+            SUDESTE)
+              ufs='["ES","MG","RJ","SP"]'
+              ;;
+            SUL)
+              ufs='["PR","RS","SC"]'
+              ;;
+            *)
+              echo "Regiao invalida: $INPUT_REGION" >&2
+              exit 1
+              ;;
+          esac
+          echo "ufs=$ufs" >> "$GITHUB_OUTPUT"
+
+  run-region-matrix:
+    needs: resolve-region
+    strategy:
+      fail-fast: false
+      max-parallel: ${{ fromJson(github.event.inputs.max_parallel) }}
+      matrix:
+        uf: ${{ fromJson(needs.resolve-region.outputs.ufs) }}
+    uses: ./.github/workflows/pipeline_state_runner.yml
+    secrets: inherit
+    with:
+      uf: ${{ matrix.uf }}
+      mode: ${{ github.event.inputs.mode }}
+      steps: ${{ github.event.inputs.steps }}
+      collectors: ${{ github.event.inputs.collectors }}
+      timeout_minutes: 360
+      artifact_prefix: regional-${{ github.event.inputs.region }}

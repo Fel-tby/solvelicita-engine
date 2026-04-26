@@ -9,6 +9,7 @@ from dataclasses import dataclass
 from datetime import datetime
 from pathlib import Path
 
+from src.config.br_regions import REGIAO_POR_UF
 from src.config.settings import build_runtime_env
 from src.collectors import cauc, dca, municipios, pncp, siconfi
 from src.engine import solvency
@@ -22,12 +23,17 @@ ETAPAS_ORDEM = ["collect", "dbt", "process", "score", "sync"]
 COLETORES_VALIDOS = {"municipios", "cauc", "siconfi", "dca", "pncp"}
 COLETORES_ORDEM = ["municipios", "cauc", "siconfi", "dca", "pncp"]
 ALL_UFS_TOKEN = "ALL"
-ALL_UFS_NORDESTE = ["AL", "BA", "CE", "MA", "PB", "PE", "PI", "RN", "SE"]
 ALL_UFS_BRASIL = [
     "AC", "AL", "AM", "AP", "BA", "CE", "DF", "ES", "GO",
     "MA", "MG", "MS", "MT", "PA", "PB", "PE", "PI", "PR",
     "RJ", "RN", "RO", "RR", "RS", "SC", "SE", "SP", "TO",
 ]
+REGIOES_ORDEM = ["NORTE", "NORDESTE", "CENTRO_OESTE", "SUDESTE", "SUL"]
+REGION_UF_PREFIX = "REGION:"
+UFS_POR_REGIAO = {
+    regiao: [uf for uf in ALL_UFS_BRASIL if REGIAO_POR_UF[uf] == regiao]
+    for regiao in REGIOES_ORDEM
+}
 
 
 @dataclass(frozen=True)
@@ -159,6 +165,7 @@ class PipelineRunInput:
     etapas: set[str]
     coletores: list[str] | None
     root: Path
+    region: str | None = None
     run_id: str | None = None
 
 
@@ -501,7 +508,21 @@ def discover_present_ufs_job(request: DiscoverPresentUfsInput) -> DiscoverPresen
 
 
 def filter_ufs_all(ufs: list[str]) -> list[str]:
-    return [uf for uf in ALL_UFS_NORDESTE if uf in set(ufs)]
+    return [uf for uf in ALL_UFS_BRASIL if uf in set(ufs)]
+
+
+def normalize_region(region: str) -> str:
+    normalized = region.strip().upper().replace("-", "_").replace(" ", "_")
+    if normalized == "CENTROOESTE":
+        normalized = "CENTRO_OESTE"
+    if normalized not in UFS_POR_REGIAO:
+        validas = ", ".join(REGIOES_ORDEM)
+        raise ValueError(f"  Erro: regiao invalida: {region!r}. Use: {validas}.")
+    return normalized
+
+
+def get_ufs_for_region(region: str) -> list[str]:
+    return list(UFS_POR_REGIAO[normalize_region(region)])
 
 
 def resolve_collectors_job(request: ResolveCollectorsInput) -> ResolveCollectorsResult:
@@ -528,9 +549,9 @@ def validate_all_uf_job(request: ValidateAllUfInput) -> ValidateAllUfResult:
                     "  Erro: com --uf ALL + collect sem --collectors, o fluxo permitido "
                     "permanece exatamente collect,dbt,process,score,sync."
                 )
-            return ValidateAllUfResult(ufs=list(ALL_UFS_NORDESTE), all_legado=True)
+            return ValidateAllUfResult(ufs=list(ALL_UFS_BRASIL), all_legado=True)
 
-        return ValidateAllUfResult(ufs=list(ALL_UFS_NORDESTE), all_legado=False)
+        return ValidateAllUfResult(ufs=list(ALL_UFS_BRASIL), all_legado=False)
 
     if not request.etapas.issubset(permitido_sem_collect):
         raise ValueError(
@@ -566,7 +587,14 @@ def execute_pipeline_run(
         )
     )
 
-    if request.uf == ALL_UFS_TOKEN:
+    region = normalize_region(request.region) if request.region else None
+    is_multi_uf = request.uf == ALL_UFS_TOKEN or region is not None
+    multi_target = f"{REGION_UF_PREFIX}{region}" if region else ALL_UFS_TOKEN
+
+    if region is not None:
+        target_ufs = get_ufs_for_region(region)
+        all_legado = False
+    elif request.uf == ALL_UFS_TOKEN:
         validated = validate_all_uf_job(
             ValidateAllUfInput(
                 mode=request.mode,
@@ -614,12 +642,12 @@ def execute_pipeline_run(
                 RuntimeError(result.error_message or f"Falha na etapa {step}"),
             )
 
-    if request.uf == ALL_UFS_TOKEN:
+    if is_multi_uf:
         if "collect" in request.etapas:
             if all_legado:
                 run_step(
                     "collect",
-                    ALL_UFS_TOKEN,
+                    multi_target,
                     request.mode,
                     lambda: deps.run_collect_legacy_all(target_ufs),
                 )
@@ -627,13 +655,13 @@ def execute_pipeline_run(
                 assert resolved.coletores is not None
                 run_step(
                     "collect",
-                    ALL_UFS_TOKEN,
+                    multi_target,
                     request.mode,
                     lambda: deps.run_collect_all(request.mode, target_ufs, resolved.coletores),
                 )
 
         if "dbt" in request.etapas:
-            run_step("dbt", ALL_UFS_TOKEN, None, lambda: deps.run_dbt(ALL_UFS_TOKEN))
+            run_step("dbt", multi_target, None, lambda: deps.run_dbt(multi_target))
 
         if "process" in request.etapas:
             for uf in target_ufs:

@@ -510,8 +510,8 @@ def publish_snapshot(
     validate_snapshot_dataframe(df, uf)
     ensure_temporal_infra()
 
-    snapshot_date = date.today()
     snapshot_ts = datetime.now(timezone.utc)
+    snapshot_date = snapshot_ts.date()
     snapshot_run_id = build_snapshot_run_id(uf, snapshot_date, run_type=run_type)
     df_snapshot = _prepare_snapshot_rows(
         df,

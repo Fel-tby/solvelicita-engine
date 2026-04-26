@@ -7,6 +7,7 @@ BigQuery -> postprocessors -> solvency -> Supabase
 Uso:
     python pipeline.py
     python pipeline.py --uf CE
+    python pipeline.py --region NORDESTE --mode incremental --steps collect,dbt,process,score,sync
     python pipeline.py --uf ALL --steps process,score,sync
     python pipeline.py --uf ALL --mode incremental --steps collect,dbt,process,score,sync
     python pipeline.py --uf ALL --mode incremental --steps collect,dbt,process,score,sync --collectors cauc --yes
@@ -14,7 +15,7 @@ Uso:
 Regras para --uf ALL:
     - sem collect: aceita apenas process, score e sync, usando as UFs descobertas no workspace
     - com collect e sem --collectors: preserva o modo legado CAUC-only
-    - com collect e com --collectors: ALL real para as UFs oficiais do Nordeste
+    - com collect e com --collectors: ALL real para as UFs oficiais do Brasil
 """
 
 import sys
@@ -30,8 +31,8 @@ ETAPAS_ORDEM = pipeline_jobs.ETAPAS_ORDEM
 COLETORES_VALIDOS = pipeline_jobs.COLETORES_VALIDOS
 COLETORES_ORDEM = pipeline_jobs.COLETORES_ORDEM
 ALL_UFS_TOKEN = pipeline_jobs.ALL_UFS_TOKEN
-ALL_UFS_NORDESTE = pipeline_jobs.ALL_UFS_NORDESTE
 ALL_UFS_BRASIL = pipeline_jobs.ALL_UFS_BRASIL
+REGION_UF_PREFIX = pipeline_jobs.REGION_UF_PREFIX
 PIPELINE_VERSION = "v9.1"
 
 
@@ -163,6 +164,16 @@ def filtrar_ufs_all(ufs: list[str]) -> list[str]:
     return pipeline_jobs.filter_ufs_all(ufs)
 
 
+def normalizar_regiao(raw: str | None) -> str | None:
+    if raw is None:
+        return None
+    return pipeline_jobs.normalize_region(raw)
+
+
+def ufs_da_regiao(region: str) -> list[str]:
+    return pipeline_jobs.get_ufs_for_region(region)
+
+
 def validar_uf_all(
     mode: str,
     etapas: set[str],
@@ -237,7 +248,9 @@ def main() -> None:
     non_interactive = "--yes" in args or "--non-interactive" in args
 
     uf_raw = obter_argumento(args, "--uf")
+    region_raw = obter_argumento(args, "--region")
     uf = uf_raw.upper() if uf_raw else None
+    region = None
 
     mode = obter_argumento(args, "--mode")
     if mode is not None and mode not in ("full", "incremental"):
@@ -247,9 +260,17 @@ def main() -> None:
     try:
         etapas = parse_etapas(obter_argumento(args, "--steps"))
         coletores = normalizar_coletores(obter_argumento(args, "--collectors"))
+        region = normalizar_regiao(region_raw)
     except ValueError as exc:
         print(str(exc))
         sys.exit(1)
+
+    if uf is not None and region is not None:
+        print("  Erro: use --uf ou --region, nao ambos.")
+        sys.exit(1)
+
+    if region is not None:
+        uf = f"{REGION_UF_PREFIX}{region}"
 
     if uf is None:
         uf = "PB" if non_interactive else selecionar_uf()
@@ -267,7 +288,9 @@ def main() -> None:
 
     ufs_all = None
     all_legado = False
-    if uf == ALL_UFS_TOKEN:
+    if region is not None:
+        ufs_all = ufs_da_regiao(region)
+    elif uf == ALL_UFS_TOKEN:
         ufs_all, all_legado = validar_uf_all(mode, etapas, coletores)
 
     etapas_str = " -> ".join(e for e in ETAPAS_ORDEM if e in etapas)
@@ -285,7 +308,7 @@ def main() -> None:
     print("  ---------------------------------------------")
     print()
     if uf == ALL_UFS_TOKEN and "collect" in etapas and all_legado:
-        print("  Aviso: --uf ALL + collect sem --collectors esta em modo legado CAUC-only.")
+        print("  Aviso: --uf ALL + collect sem --collectors esta em modo legado CAUC-only nacional.")
         print()
     if not non_interactive:
         input("  Pressione Enter para iniciar ou Ctrl+C para cancelar...")
@@ -297,6 +320,7 @@ def main() -> None:
         etapas=set(etapas),
         coletores=coletores,
         root=ROOT,
+        region=region,
     )
     deps = pipeline_jobs.PipelineExecutionDeps(
         prepare_paths=get_paths,

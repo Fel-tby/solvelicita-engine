@@ -6,7 +6,7 @@ import tomllib
 def test_pyproject_declara_pacote_e_entrypoint_do_pipeline():
     pyproject = tomllib.loads(Path("pyproject.toml").read_text(encoding="utf-8"))
 
-    assert pyproject["project"]["name"] == "solvelicita"
+    assert pyproject["project"]["name"] == "solvelicita-engine"
     assert pyproject["project"]["scripts"]["solvelicita-pipeline"] == "pipeline:main"
     assert pyproject["tool"]["setuptools"]["py-modules"] == ["pipeline"]
     assert pyproject["tool"]["setuptools"]["packages"]["find"]["include"] == ["src", "src.*"]
