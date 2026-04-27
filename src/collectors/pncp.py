@@ -21,7 +21,7 @@ import httpx
 import logging
 import pandas as pd
 from pathlib import Path
-from datetime import date, timedelta
+from datetime import date, datetime, timedelta, timezone
 from calendar import monthrange
 
 logging.getLogger("httpx").setLevel(logging.WARNING)
@@ -31,13 +31,14 @@ if __package__ in (None, ""):
     sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
 
 from src.utils.paths import get_artifact_path
-from src.utils.bigquery_loader import upload_raw
+from src.utils.bigquery_loader import publish_raw_merge
 
 BASE_URL = "https://pncp.gov.br/api/consulta/v1/contratacoes/publicacao"
 
 # Reduzido para 2025-01-01 para maior performance
 DATA_INICIO_FULL       = date(2025, 1, 1)
 JANELA_INCREMENTAL_DIAS = 60
+COLETOR_VERSAO = "pncp_async_merge_v1"
 
 MODALIDADES = {
     1 : "Leilão Eletrônico",
@@ -281,12 +282,19 @@ async def orquestrar_coleta(
     progresso.finalizar()
 
 
-def _consolidar_jsonl_para_raw(json_path: Path, uf: str) -> pd.DataFrame:
+def _consolidar_jsonl_para_raw(
+    json_path: Path,
+    uf: str,
+    *,
+    mode: str,
+    janela_inicio: date,
+    janela_fim: date,
+) -> pd.DataFrame:
     """
     Consolida o JSONL do PNCP em DataFrame pronto para upload na camada raw.
 
     O objetivo aqui e preservar o payload consumido por stg_pncp, ajustando
-    apenas uf e mes para o formato esperado no BigQuery.
+    uf/mes e adicionando metadados de coleta para auditoria.
     """
     if not json_path.exists():
         return pd.DataFrame()
@@ -330,16 +338,42 @@ def _consolidar_jsonl_para_raw(json_path: Path, uf: str) -> pd.DataFrame:
     if "dataAtualizacaoGlobal" not in df.columns and "dataAtualizacao" in df.columns:
         df["dataAtualizacaoGlobal"] = df["dataAtualizacao"]
 
+    df["dataColeta"] = datetime.now(timezone.utc).isoformat()
+    df["modoColeta"] = mode
+    df["janelaInicio"] = janela_inicio.isoformat()
+    df["janelaFim"] = janela_fim.isoformat()
+    df["coletorVersao"] = COLETOR_VERSAO
+
     return df
 
 
-def _upload_jsonl_para_bq(json_path: Path, uf: str) -> None:
-    df = _consolidar_jsonl_para_raw(json_path, uf)
+def _upload_jsonl_para_bq(
+    json_path: Path,
+    uf: str,
+    *,
+    mode: str,
+    janela_inicio: date,
+    janela_fim: date,
+) -> None:
+    df = _consolidar_jsonl_para_raw(
+        json_path,
+        uf,
+        mode=mode,
+        janela_inicio=janela_inicio,
+        janela_fim=janela_fim,
+    )
     if df.empty:
         print("  [BQ] Aviso: nenhum registro PNCP valido para upload.")
         return
 
-    upload_raw(df, table="pncp", uf=uf, write_mode="append")
+    # Publicacao idempotente: uma nova coleta atualiza o estado da contratacao
+    # por numeroControlePNCP em vez de empilhar duplicatas em raw.pncp.
+    publish_raw_merge(
+        df,
+        table="pncp",
+        uf=uf,
+        key_cols=["numeroControlePNCP"],
+    )
 
 
 def run(mode: str = "full", uf: str = "PB") -> None:
@@ -367,6 +401,12 @@ def run(mode: str = "full", uf: str = "PB") -> None:
             print(f"  [INFO] {snap_jsonl_novo.name} removido — coleta full reiniciada.")
     else:
         data_inicio = hoje - timedelta(days=JANELA_INCREMENTAL_DIAS)
+        if snap_jsonl_novo.exists():
+            snap_jsonl_novo.unlink()
+            print(
+                f"  [INFO] {snap_jsonl_novo.name} removido — "
+                "incremental recoleta a janela movel e o BQ faz MERGE."
+            )
 
     t0    = time.time()
     meses = gerar_meses(data_inicio, hoje)
@@ -397,7 +437,13 @@ def run(mode: str = "full", uf: str = "PB") -> None:
 
     elapsed = time.time() - t0
     print("  [BQ] Consolidando JSONL e enviando para raw.pncp...")
-    _upload_jsonl_para_bq(snap_jsonl_novo, uf)
+    _upload_jsonl_para_bq(
+        snap_jsonl_novo,
+        uf,
+        mode=mode,
+        janela_inicio=data_inicio,
+        janela_fim=hoje,
+    )
     print(f"\n[SUCCESS] Coleta concluída em {elapsed / 60:.1f} min")
     print(f"  JSONL primário  : {snap_jsonl_novo.name}")
     print(f"  Próximo passo   : python pipeline.py --steps dbt,process,score")

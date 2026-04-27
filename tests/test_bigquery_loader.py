@@ -3,6 +3,7 @@ import pandas as pd
 from src.utils.bigquery_loader import (
     _build_merge_sql,
     _dedupe_by_keys,
+    _merge_max_gib_for_table,
     _normalize_key_columns,
     _sanitize,
 )
@@ -56,3 +57,17 @@ def test_build_merge_sql_contains_keys_and_insert():
     assert "T.`ano` = S.`ano`" in sql
     assert "WHEN NOT MATCHED THEN" in sql
     assert "INSERT (`uf`, `cod_ibge`, `ano`, `valor`)" in sql
+
+
+def test_merge_max_gib_uses_table_default(monkeypatch):
+    monkeypatch.delenv("BQ_MERGE_MAX_GIB_SICONFI_RREO", raising=False)
+    monkeypatch.delenv("BQ_MERGE_MAX_GIB_DEFAULT", raising=False)
+
+    assert _merge_max_gib_for_table("siconfi_rreo") == 10.0
+
+
+def test_merge_max_gib_specific_env_overrides_default(monkeypatch):
+    monkeypatch.setenv("BQ_MERGE_MAX_GIB_DEFAULT", "3")
+    monkeypatch.setenv("BQ_MERGE_MAX_GIB_SICONFI_RREO", "12.5")
+
+    assert _merge_max_gib_for_table("siconfi_rreo") == 12.5

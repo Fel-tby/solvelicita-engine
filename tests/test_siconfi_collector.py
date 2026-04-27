@@ -212,3 +212,29 @@ def test_extrair_assincrono_aceita_progresso_none(monkeypatch):
     )
 
     assert resultado == [{"ok": True}]
+
+
+def test_validar_buffer_publicacao_permite_ate_limite(monkeypatch):
+    monkeypatch.setattr(siconfi, "MAX_BUFFER_PUBLICACAO_LINHAS", 2)
+
+    siconfi._validar_buffer_publicacao(
+        [{"a": 1}, {"a": 2}],
+        table="siconfi_rreo",
+        uf="PB",
+    )
+
+
+def test_validar_buffer_publicacao_falha_acima_do_limite(monkeypatch):
+    monkeypatch.setattr(siconfi, "MAX_BUFFER_PUBLICACAO_LINHAS", 1)
+
+    try:
+        siconfi._validar_buffer_publicacao(
+            [{"a": 1}, {"a": 2}],
+            table="siconfi_rreo",
+            uf="PB",
+        )
+    except RuntimeError as exc:
+        assert "Buffer SICONFI excedeu" in str(exc)
+        assert "siconfi_rreo" in str(exc)
+    else:
+        raise AssertionError("Esperava RuntimeError para buffer acima do limite")

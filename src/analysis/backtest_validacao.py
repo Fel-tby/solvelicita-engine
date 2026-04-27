@@ -67,6 +67,7 @@ for candidate in (ROOT, SRC_ROOT):
         sys.path.insert(0, candidate_str)
 
 from src.utils.paths import get_paths
+from src.config.br_regions import REGIAO_POR_UF
 
 ANALYSIS_ROOT = ROOT / "data" / "analysis"
 ANALYSIS_ROOT.mkdir(parents=True, exist_ok=True)
@@ -344,6 +345,7 @@ def construir_pares(df, incluir_rproc=True, excluir_t0=None):
 
             registros.append({
                 "uf": row_t0.get("uf"),
+                "regiao": REGIAO_POR_UF.get(str(row_t0.get("uf", "")).upper()),
                 "cod_ibge": cod,
                 "municipio": row_t0["instituicao"],
                 "populacao": row_t0["populacao"],
@@ -426,6 +428,74 @@ def _resumo_por_uf(pares: pd.DataFrame) -> pd.DataFrame:
         )
         .reset_index()
         .sort_values("uf")
+    )
+
+
+def _format_auc(valor: object) -> str:
+    if isinstance(valor, float):
+        return f"{valor:.4f}"
+    return str(valor)
+
+
+def _format_float(valor: object, casas: int = 4, sinal: bool = False) -> str:
+    if pd.isna(valor):
+        return "-"
+    prefix = "+" if sinal else ""
+    return f"{float(valor):{prefix}.{casas}f}"
+
+
+def _metricas_por_grupo(
+    pares: pd.DataFrame,
+    coluna: str,
+    *,
+    min_pares: int = 30,
+) -> pd.DataFrame:
+    linhas = []
+    if coluna not in pares.columns:
+        return pd.DataFrame(linhas)
+
+    for grupo, sub_total in pares.dropna(subset=[coluna]).groupby(coluna):
+        label_principal, sub_principal = _metricas_principais(sub_total)
+        sub_metricas = sub_principal if len(sub_principal) >= min_pares else sub_total
+
+        spearman = (
+            analise_spearman(sub_metricas, str(grupo))
+            if len(sub_metricas) >= 3
+            else None
+        )
+        auc = (
+            analise_roc(sub_metricas, str(grupo))
+            if len(sub_metricas) >= 3
+            else None
+        )
+
+        linhas.append({
+            coluna: grupo,
+            "base": label_principal if len(sub_principal) >= min_pares else "Total",
+            "n_pares": len(sub_metricas),
+            "n_total": len(sub_total),
+            "municipios": sub_total["cod_ibge"].nunique(),
+            "positivos": int((sub_metricas["rproc_t1"] > 3.0).sum()),
+            "pct_positivos": round(100 * (sub_metricas["rproc_t1"] > 3.0).mean(), 1)
+            if len(sub_metricas)
+            else 0.0,
+            "spearman": spearman["r"] if spearman else np.nan,
+            "auc": auc["auc"] if auc else "amostra insuficiente",
+            "score_med": round(float(sub_metricas["score_t0"].mean()), 2)
+            if len(sub_metricas)
+            else np.nan,
+            "rproc_t1_med": round(float(sub_metricas["rproc_t1"].median()), 2)
+            if len(sub_metricas)
+            else np.nan,
+        })
+
+    if not linhas:
+        return pd.DataFrame(linhas)
+
+    return (
+        pd.DataFrame(linhas)
+        .sort_values(["n_pares", coluna], ascending=[False, True])
+        .reset_index(drop=True)
     )
 
 
@@ -525,6 +595,45 @@ def gerar_relatorio(pares, incluir_rproc, excluir_t0=None, escopo="UF PB", ufs=N
     w("")
 
     if "uf" in pares.columns and pares["uf"].nunique() > 1:
+        if "regiao" in pares.columns and pares["regiao"].nunique() > 1:
+            w("RESULTADO POR REGIAO")
+            w(
+                "  Regiao         base          n_metricas  n_total  municipios  "
+                "positivos  pos_%  spearman  auc     score_med  desfecho_med"
+            )
+            for _, row in _metricas_por_grupo(pares, "regiao").iterrows():
+                w(
+                    f"  {row['regiao']:<13s} {row['base']:<13s} "
+                    f"{int(row['n_pares']):9d} {int(row['n_total']):8d} "
+                    f"{int(row['municipios']):10d} {int(row['positivos']):9d} "
+                    f"{row['pct_positivos']:5.1f} "
+                    f"{_format_float(row['spearman'], sinal=True):>9s} "
+                    f"{_format_auc(row['auc']):>7s} "
+                    f"{row['score_med']:9.2f} {row['rproc_t1_med']:12.2f}%"
+                )
+            w("")
+
+            w("RESULTADO POR REGIAO E ERA")
+            for regiao, sub_regiao in pares.dropna(subset=["regiao"]).groupby("regiao"):
+                w(f"  {regiao}:")
+                for era in ["completa", "parcial"]:
+                    sub = sub_regiao[sub_regiao["era"] == era]
+                    if len(sub) < 30:
+                        continue
+                    res_s = analise_spearman(sub, f"{regiao} {era}")
+                    res_a = analise_roc(sub, f"{regiao} {era}")
+                    positivos = int((sub["rproc_t1"] > 3.0).sum())
+                    linha = (
+                        f"    {era:<8s} n={len(sub):4d} "
+                        f"municipios={sub['cod_ibge'].nunique():4d} "
+                        f"positivos={positivos:4d} "
+                        f"pos_%={100 * positivos / len(sub):5.1f} "
+                        f"spearman={res_s['r']:+.4f} "
+                        f"auc={_format_auc(res_a['auc'])}"
+                    )
+                    w(linha)
+            w("")
+
         w("RESULTADO POR UF")
         for uf, sub in pares.groupby("uf"):
             res_s = analise_spearman(sub, uf)

@@ -36,7 +36,7 @@ from src.collectors.municipios import carregar_municipios
 BASE_URL_SICONFI = "https://apidatalake.tesouro.gov.br/ords/siconfi/tt"
 MAX_CONCORRENCIA = 10
 POP_LIMITE_RGF_SEMESTRAL = 50000
-BATCH_PUBLICACAO_LINHAS = 100000
+MAX_BUFFER_PUBLICACAO_LINHAS = 1_500_000
 DF_QUERY_ID_ENTE = "53"
 DF_OUTPUT_COD_IBGE = "5300108"
 DF_ENTITY_NAME = "Governo do Distrito Federal"
@@ -626,6 +626,18 @@ def _flush_registros_lote(
     registros.clear()
 
 
+def _validar_buffer_publicacao(registros: list[dict], *, table: str, uf: str) -> None:
+    if len(registros) <= MAX_BUFFER_PUBLICACAO_LINHAS:
+        return
+
+    raise RuntimeError(
+        "Buffer SICONFI excedeu o limite seguro antes da publicacao no BigQuery: "
+        f"table={table} uf={uf.upper()} linhas={len(registros):,} "
+        f"limite={MAX_BUFFER_PUBLICACAO_LINHAS:,}. "
+        "Interrompido para evitar multiplos MERGEs caros ou estouro de memoria."
+    )
+
+
 async def orquestrar_coleta(anos: list[int], uf: str) -> None:
     uf_upper     = uf.upper()
     semaforo     = asyncio.Semaphore(MAX_CONCORRENCIA)
@@ -722,23 +734,19 @@ async def orquestrar_coleta(anos: list[int], uf: str) -> None:
 
             if registros_rreo:
                 buffer_rreo.extend(registros_rreo)
-                if len(buffer_rreo) >= BATCH_PUBLICACAO_LINHAS:
-                    _flush_registros_lote(
-                        buffer_rreo,
-                        table="siconfi_rreo",
-                        uf=uf_upper,
-                        key_cols=CHAVE_RREO,
-                    )
+                _validar_buffer_publicacao(
+                    buffer_rreo,
+                    table="siconfi_rreo",
+                    uf=uf_upper,
+                )
 
             if registros_rgf:
                 buffer_rgf.extend(registros_rgf)
-                if len(buffer_rgf) >= BATCH_PUBLICACAO_LINHAS:
-                    _flush_registros_lote(
-                        buffer_rgf,
-                        table="siconfi_rgf",
-                        uf=uf_upper,
-                        key_cols=CHAVE_RGF,
-                    )
+                _validar_buffer_publicacao(
+                    buffer_rgf,
+                    table="siconfi_rgf",
+                    uf=uf_upper,
+                )
 
     prog_extrato.finalizar()
     prog_rreo.finalizar()

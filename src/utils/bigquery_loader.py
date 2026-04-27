@@ -4,6 +4,7 @@ bigquery_loader.py - Interface unica de leitura/escrita no BigQuery.
 
 import json
 import logging
+import os
 import re
 import time
 from pathlib import Path
@@ -18,6 +19,16 @@ logger = logging.getLogger(__name__)
 
 _client = None
 _BQ_AVAILABLE = None
+
+BYTES_PER_GIB = 1024 ** 3
+DEFAULT_MERGE_MAX_GIB_BY_TABLE = {
+    "cauc": 0.5,
+    "dim_municipios": 0.5,
+    "dca": 2.0,
+    "pncp": 5.0,
+    "siconfi_rgf": 2.0,
+    "siconfi_rreo": 10.0,
+}
 
 
 def _check_bq_available() -> bool:
@@ -40,6 +51,62 @@ def _cfg() -> dict:
         "dataset": cfg.dataset,
         "enabled": cfg.enabled,
     }
+
+
+def _env_float(name: str) -> float | None:
+    raw = os.environ.get(name)
+    if raw is None or raw.strip() == "":
+        return None
+    try:
+        return float(raw)
+    except ValueError as exc:
+        raise ValueError(f"Variavel de ambiente {name} deve ser numerica: {raw!r}") from exc
+
+
+def _merge_max_gib_for_table(table: str) -> float | None:
+    specific = _env_float(f"BQ_MERGE_MAX_GIB_{table.upper()}")
+    if specific is not None:
+        return specific
+
+    default = _env_float("BQ_MERGE_MAX_GIB_DEFAULT")
+    if default is not None:
+        return default
+
+    return DEFAULT_MERGE_MAX_GIB_BY_TABLE.get(table)
+
+
+def _build_query_job_config_for_merge(table: str):
+    max_gib = _merge_max_gib_for_table(table)
+    if max_gib is None or max_gib <= 0:
+        return None
+
+    bigquery = _import_bigquery()
+    return bigquery.QueryJobConfig(
+        maximum_bytes_billed=int(max_gib * BYTES_PER_GIB)
+    )
+
+
+def _job_billed_gib(job) -> float | None:
+    billed = getattr(job, "total_bytes_billed", None)
+    if billed is None:
+        return None
+    return billed / BYTES_PER_GIB
+
+
+def _print_merge_cost(*, target_ref: str, uf: str, rows: int, job) -> None:
+    billed_gib = _job_billed_gib(job)
+    job_id = getattr(job, "job_id", "")
+    if billed_gib is None:
+        print(
+            f"  [BQ] merge seguro concluido: {target_ref} | "
+            f"uf={uf.upper()} | linhas={rows:,} | job={job_id}"
+        )
+        return
+
+    print(
+        f"  [BQ] merge seguro concluido: {target_ref} | "
+        f"uf={uf.upper()} | linhas={rows:,} | billed={billed_gib:.3f} GiB | job={job_id}"
+    )
 
 
 def _get_client():
@@ -243,7 +310,18 @@ WHEN NOT MATCHED THEN
 
     try:
         client.load_table_from_dataframe(df.copy(), temp_table_ref, job_config=job_config).result()
-        client.query(merge_sql).result()
+        table_name = table_ref.rsplit(".", 1)[-1]
+        query_job = client.query(
+            merge_sql,
+            job_config=_build_query_job_config_for_merge(table_name),
+        )
+        query_job.result()
+        _print_merge_cost(
+            target_ref=table_ref,
+            uf="",
+            rows=len(df),
+            job=query_job,
+        )
     finally:
         client.delete_table(temp_table_ref, not_found_ok=True)
 
@@ -462,14 +540,20 @@ def publish_raw_merge(
             cols=list(df_upload.columns),
             key_cols=key_cols_norm,
         )
-        client.query(merge_sql).result()
-        logger.info(
-            "[BQ] publish_raw_merge: %s uf=%s linhas=%d",
-            target_ref, uf.upper(), len(df_upload),
+        query_job = client.query(
+            merge_sql,
+            job_config=_build_query_job_config_for_merge(table),
         )
-        print(
-            f"  [BQ] merge seguro concluido: {target_ref} | "
-            f"uf={uf.upper()} | linhas={len(df_upload):,}"
+        query_job.result()
+        logger.info(
+            "[BQ] publish_raw_merge: %s uf=%s linhas=%d billed_gib=%s",
+            target_ref, uf.upper(), len(df_upload), _job_billed_gib(query_job),
+        )
+        _print_merge_cost(
+            target_ref=target_ref,
+            uf=uf,
+            rows=len(df_upload),
+            job=query_job,
         )
     finally:
         client.delete_table(temp_ref, not_found_ok=True)

@@ -36,14 +36,27 @@ COLUNAS = {
     "dado_suspeito": "dado_suspeito", "dado_suspeito_lliq": "dado_suspeito_lliq",
     "autonomia_critica": "autonomia_critica",
     "dias_atraso": "dias_atraso", "decay_fator": "decay_fator",
+    # Campos PNCP. "dispensa" foi mantido para compatibilidade com producao,
+    # mas agora significa apenas modalidade 8. Modalidade 9 segue separada
+    # como inexigibilidade; 8 + 9 e exposto como contratacao direta.
     "n_licitacoes": "n_licitacoes", "valor_homologado_total": "valor_homologado_total",
+    "n_com_valor_homologado": "n_com_valor_homologado",
+    "n_sem_valor_homologado": "n_sem_valor_homologado",
     "n_dispensa": "n_dispensa", "valor_hom_dispensa": "valor_hom_dispensa",
+    "n_inexigibilidade": "n_inexigibilidade",
+    "valor_hom_inexigibilidade": "valor_hom_inexigibilidade",
+    "pct_inexigibilidade": "pct_inexigibilidade",
+    "n_contratacao_direta": "n_contratacao_direta",
+    "valor_hom_contratacao_direta": "valor_hom_contratacao_direta",
+    "pct_contratacao_direta": "pct_contratacao_direta",
     "ano_ultima_licitacao": "ano_ultima_licitacao",
     "pct_dispensa": "pct_dispensa", "alerta_dispensa": "alerta_dispensa",
 }
 
 COLUNAS_INTEGER = {
-    "n_licitacoes", "n_dispensa", "ano_ultima_licitacao",
+    "n_licitacoes", "n_com_valor_homologado", "n_sem_valor_homologado",
+    "n_dispensa", "n_inexigibilidade", "n_contratacao_direta",
+    "ano_ultima_licitacao",
     "n_anos_cronicos", "anos_entregues", "populacao", "dias_atraso",
     "n_graves", "n_moderadas", "n_leves",
 }

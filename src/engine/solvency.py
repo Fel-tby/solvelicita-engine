@@ -28,6 +28,28 @@ from src.engine.classifier import classificar, ORDEM_SORT
 
 VERSION = "v7.0"
 
+# PNCP e usado como enriquecimento de mercado, sem alterar o score fiscal.
+# Dispensa preserva o nome historico, mas representa apenas modalidade 8.
+# Inexigibilidade (modalidade 9) segue separada para auditoria e decisao futura.
+PNCP_COLS = [
+    "cod_ibge",
+    "n_licitacoes",
+    "n_com_valor_homologado",
+    "n_sem_valor_homologado",
+    "valor_homologado_total",
+    "n_dispensa",
+    "valor_hom_dispensa",
+    "pct_dispensa",
+    "n_inexigibilidade",
+    "valor_hom_inexigibilidade",
+    "pct_inexigibilidade",
+    "n_contratacao_direta",
+    "valor_hom_contratacao_direta",
+    "pct_contratacao_direta",
+    "ano_ultima_licitacao",
+    "alerta_dispensa",
+]
+
 
 def _ascii_console(text: object) -> str:
     normalized = unicodedata.normalize("NFKD", str(text))
@@ -103,8 +125,7 @@ def _carregar_bq(uf: str, *, strict_bigquery: bool = False) -> pd.DataFrame:
     legacy_cols = [
         "eorcam_raw", "lliq_raw", "lliq_parcial", "dias_atraso", "decay_fator",
         "dado_suspeito_lliq", "dado_defasado", "autonomia_media", "autonomia_critica",
-        "n_licitacoes", "valor_homologado_total", "n_dispensa", "valor_hom_dispensa",
-        "pct_dispensa", "ano_ultima_licitacao", "alerta_dispensa"
+        *[col for col in PNCP_COLS if col != "cod_ibge"],
     ]
     df = df.drop(columns=[c for c in legacy_cols if c in df.columns])
 
@@ -114,16 +135,14 @@ def _carregar_bq(uf: str, *, strict_bigquery: bool = False) -> pd.DataFrame:
         df_pncp = read_mart("mart_pncp_municipios", uf=uf, strict=True)
         if not df_pncp.empty:
             df_pncp["cod_ibge"] = df_pncp["cod_ibge"].astype(str).str.zfill(7)
-            pncp_cols = ["cod_ibge", "n_licitacoes", "valor_homologado_total", "n_dispensa", "valor_hom_dispensa", "pct_dispensa", "ano_ultima_licitacao", "alerta_dispensa"]
-            df_pncp = df_pncp[[c for c in pncp_cols if c in df_pncp.columns]]
+            df_pncp = df_pncp[[c for c in PNCP_COLS if c in df_pncp.columns]]
             df = df.merge(df_pncp, on="cod_ibge", how="left")
     else:
         try:
             df_pncp = read_mart("mart_pncp_municipios", uf=uf, strict=False)
             if not df_pncp.empty:
                 df_pncp["cod_ibge"] = df_pncp["cod_ibge"].astype(str).str.zfill(7)
-                pncp_cols = ["cod_ibge", "n_licitacoes", "valor_homologado_total", "n_dispensa", "valor_hom_dispensa", "pct_dispensa", "ano_ultima_licitacao", "alerta_dispensa"]
-                df_pncp = df_pncp[[c for c in pncp_cols if c in df_pncp.columns]]
+                df_pncp = df_pncp[[c for c in PNCP_COLS if c in df_pncp.columns]]
                 df = df.merge(df_pncp, on="cod_ibge", how="left")
         except Exception as e:
             print(f"  ⚠️ Erro ao carregar mart_pncp_municipios: {e}")
@@ -336,9 +355,13 @@ def run(
         "dias_atraso", "decay_fator",
         "dado_suspeito", "dado_suspeito_lliq", "dado_defasado",
         "lliq_parcial", "autonomia_critica",
-        "n_licitacoes", "valor_homologado_total", "n_dispensa",
-        "valor_hom_dispensa", "pct_dispensa", "ano_ultima_licitacao",
-        "alerta_dispensa",
+        "n_licitacoes", "n_com_valor_homologado", "n_sem_valor_homologado",
+        "valor_homologado_total",
+        "n_dispensa", "valor_hom_dispensa", "pct_dispensa",
+        "n_inexigibilidade", "valor_hom_inexigibilidade", "pct_inexigibilidade",
+        "n_contratacao_direta", "valor_hom_contratacao_direta",
+        "pct_contratacao_direta",
+        "ano_ultima_licitacao", "alerta_dispensa",
     ]
     df_out = df[[c for c in OUT_COLS if c in df.columns]].copy()
     df_out["_ordem"] = df_out["classificacao"].map(ORDEM_SORT)
