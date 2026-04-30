@@ -89,6 +89,8 @@ docs/**
 !docs/assets/**
 !docs/METODOLOGIA.md
 !docs/VALIDACAO.md
+!docs/OPERACAO_GIT_MAIN_ROLLBACK.md
+!docs/PNCP_SICONFI_BQ_GUARDRAILS.md
 docs/_build/
 /site
 

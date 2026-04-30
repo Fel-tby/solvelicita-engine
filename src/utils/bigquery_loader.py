@@ -29,6 +29,10 @@ DEFAULT_MERGE_MAX_GIB_BY_TABLE = {
     "siconfi_rgf": 2.0,
     "siconfi_rreo": 10.0,
 }
+DEFAULT_REPLACE_SLICE_MAX_GIB_BY_TABLE = {
+    "siconfi_rgf": 1.0,
+    "siconfi_rreo": 2.0,
+}
 
 
 def _check_bq_available() -> bool:
@@ -75,6 +79,18 @@ def _merge_max_gib_for_table(table: str) -> float | None:
     return DEFAULT_MERGE_MAX_GIB_BY_TABLE.get(table)
 
 
+def _replace_slice_max_gib_for_table(table: str) -> float | None:
+    specific = _env_float(f"BQ_REPLACE_SLICE_MAX_GIB_{table.upper()}")
+    if specific is not None:
+        return specific
+
+    default = _env_float("BQ_REPLACE_SLICE_MAX_GIB_DEFAULT")
+    if default is not None:
+        return default
+
+    return DEFAULT_REPLACE_SLICE_MAX_GIB_BY_TABLE.get(table)
+
+
 def _build_query_job_config_for_merge(table: str):
     max_gib = _merge_max_gib_for_table(table)
     if max_gib is None or max_gib <= 0:
@@ -84,6 +100,20 @@ def _build_query_job_config_for_merge(table: str):
     return bigquery.QueryJobConfig(
         maximum_bytes_billed=int(max_gib * BYTES_PER_GIB)
     )
+
+
+def _build_query_job_config_for_replace_slice(table: str, query_parameters: list | None = None):
+    max_gib = _replace_slice_max_gib_for_table(table)
+    if (max_gib is None or max_gib <= 0) and not query_parameters:
+        return None
+
+    bigquery = _import_bigquery()
+    kwargs = {}
+    if max_gib is not None and max_gib > 0:
+        kwargs["maximum_bytes_billed"] = int(max_gib * BYTES_PER_GIB)
+    if query_parameters:
+        kwargs["query_parameters"] = query_parameters
+    return bigquery.QueryJobConfig(**kwargs)
 
 
 def _job_billed_gib(job) -> float | None:
@@ -106,6 +136,23 @@ def _print_merge_cost(*, target_ref: str, uf: str, rows: int, job) -> None:
     print(
         f"  [BQ] merge seguro concluido: {target_ref} | "
         f"uf={uf.upper()} | linhas={rows:,} | billed={billed_gib:.3f} GiB | job={job_id}"
+    )
+
+
+def _print_replace_slice_cost(*, target_ref: str, uf: str, rows: int, slice_summary: str, job) -> None:
+    billed_gib = _job_billed_gib(job)
+    job_id = getattr(job, "job_id", "")
+    if billed_gib is None:
+        print(
+            f"  [BQ] replace-slice concluido: {target_ref} | "
+            f"uf={uf.upper()} | {slice_summary} | linhas={rows:,} | job={job_id}"
+        )
+        return
+
+    print(
+        f"  [BQ] replace-slice concluido: {target_ref} | "
+        f"uf={uf.upper()} | {slice_summary} | linhas={rows:,} | "
+        f"billed={billed_gib:.3f} GiB | job={job_id}"
     )
 
 
@@ -422,6 +469,33 @@ WHEN NOT MATCHED THEN
 """.strip()
 
 
+def _build_replace_slice_sql(
+    target_ref: str,
+    temp_ref: str,
+    cols: list[str],
+    slice_cols: list[str],
+) -> str:
+    predicates = ["`uf` = @uf"]
+    for col in slice_cols:
+        predicates.append(f"`{col}` IN UNNEST(@slice_{col})")
+
+    insert_cols = ", ".join([f"`{col}`" for col in cols])
+    select_cols = ", ".join([f"`{col}`" for col in cols])
+    delete_where = " AND ".join(predicates)
+    return f"""
+BEGIN TRANSACTION;
+
+DELETE FROM `{target_ref}`
+WHERE {delete_where};
+
+INSERT INTO `{target_ref}` ({insert_cols})
+SELECT {select_cols}
+FROM `{temp_ref}`;
+
+COMMIT TRANSACTION;
+""".strip()
+
+
 def _ensure_target_table(client, target_ref: str, cols: list[str]) -> None:
     from google.cloud import bigquery
     from google.api_core.exceptions import NotFound
@@ -553,6 +627,128 @@ def publish_raw_merge(
             target_ref=target_ref,
             uf=uf,
             rows=len(df_upload),
+            job=query_job,
+        )
+    finally:
+        client.delete_table(temp_ref, not_found_ok=True)
+
+
+def publish_raw_replace_slice(
+    df: pd.DataFrame,
+    table: str,
+    uf: str,
+    key_cols: list[str],
+    slice_cols: list[str],
+) -> None:
+    """
+    Publica uma fatia raw.* por substituicao transacional.
+
+    Este caminho existe para coletores em que o lote representa a fotografia
+    completa de uma UF em certos periodos (ex.: SICONFI por uf + exercicio).
+    Ele evita o MERGE linha-a-linha, que no BigQuery pode varrer a tabela alvo
+    inteira a cada UF. O fluxo e:
+    - carrega o lote em uma tabela temporaria;
+    - dentro de uma transacao, remove apenas uf + slice_cols presentes no lote;
+    - insere a temporaria no alvo final.
+
+    Nao usar para lotes parciais dentro da mesma fatia, pois isso substituiria
+    dados que nao vieram no lote atual.
+    """
+    cfg = _cfg()
+
+    if df.empty:
+        print(f"  [BQ] aviso: lote vazio para raw.{table} ({uf.upper()})")
+        return
+
+    if not cfg["enabled"] or not _check_bq_available() or not cfg["sa_path"]:
+        logger.info(
+            "[BQ stub] publish_raw_replace_slice ignorado: table=%s.%s uf=%s linhas=%d",
+            cfg["dataset"], table, uf.upper(), len(df),
+        )
+        return
+
+    from google.cloud import bigquery
+
+    df_upload = _sanitize(df, uf)
+    key_cols_norm = _normalize_key_columns(key_cols)
+    slice_cols_norm = _normalize_key_columns(slice_cols)
+    _validate_keys(df_upload, key_cols_norm, uf)
+
+    missing_slices = [col for col in slice_cols_norm if col not in df_upload.columns]
+    if missing_slices:
+        raise ValueError(
+            "Colunas de fatia ausentes para replace-slice: "
+            + ", ".join(missing_slices)
+        )
+
+    for col in slice_cols_norm:
+        invalid = df_upload[col].isna() | (df_upload[col].astype(str).str.strip() == "")
+        if invalid.any():
+            raise ValueError(
+                f"Coluna de fatia '{col}' contem valores nulos/vazios em "
+                f"{int(invalid.sum())} linhas."
+            )
+
+    df_upload = _dedupe_by_keys(df_upload, key_cols_norm, table, uf)
+
+    client = _get_client()
+    target_ref = f"{cfg['project']}.{cfg['dataset']}.{table}"
+    temp_ref = (
+        f"{cfg['project']}.{cfg['dataset']}."
+        f"__tmp_replace_{table}_{uf.lower()}_{int(time.time())}_{uuid4().hex[:8]}"
+    )
+
+    schema = [bigquery.SchemaField(col, "STRING") for col in df_upload.columns]
+    load_config = bigquery.LoadJobConfig(
+        write_disposition=bigquery.WriteDisposition.WRITE_TRUNCATE,
+        schema=schema,
+    )
+
+    query_parameters = [
+        bigquery.ScalarQueryParameter("uf", "STRING", uf.upper()),
+    ]
+    slice_summary_parts = []
+    for col in slice_cols_norm:
+        values = sorted(set(df_upload[col].dropna().astype(str).str.strip()))
+        if not values:
+            raise ValueError(f"Coluna de fatia '{col}' nao tem valores validos.")
+        query_parameters.append(
+            bigquery.ArrayQueryParameter(f"slice_{col}", "STRING", values)
+        )
+        slice_summary_parts.append(f"{col}={','.join(values)}")
+
+    replace_sql = _build_replace_slice_sql(
+        target_ref=target_ref,
+        temp_ref=temp_ref,
+        cols=list(df_upload.columns),
+        slice_cols=slice_cols_norm,
+    )
+
+    try:
+        client.load_table_from_dataframe(df_upload, temp_ref, job_config=load_config).result()
+        _ensure_target_table(client, target_ref, list(df_upload.columns))
+
+        query_job = client.query(
+            replace_sql,
+            job_config=_build_query_job_config_for_replace_slice(
+                table,
+                query_parameters=query_parameters,
+            ),
+        )
+        query_job.result()
+        logger.info(
+            "[BQ] publish_raw_replace_slice: %s uf=%s slices=%s linhas=%d billed_gib=%s",
+            target_ref,
+            uf.upper(),
+            ";".join(slice_summary_parts),
+            len(df_upload),
+            _job_billed_gib(query_job),
+        )
+        _print_replace_slice_cost(
+            target_ref=target_ref,
+            uf=uf,
+            rows=len(df_upload),
+            slice_summary="; ".join(slice_summary_parts),
             job=query_job,
         )
     finally:

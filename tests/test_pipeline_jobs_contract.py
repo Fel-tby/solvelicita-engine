@@ -177,6 +177,33 @@ def test_run_collect_all_job_reusa_download_cauc(monkeypatch):
     ]
 
 
+def test_run_collect_all_job_continua_apos_falha_e_reporta_resumo(monkeypatch):
+    chamadas = []
+
+    def fake_run_collect_job(request):
+        chamadas.append(request.uf)
+        if request.uf == "BA":
+            raise RuntimeError("falha PNCP BA")
+
+    monkeypatch.setattr(pipeline_jobs, "get_paths", lambda uf: None)
+    monkeypatch.setattr(pipeline_jobs, "run_collect_job", fake_run_collect_job)
+
+    try:
+        pipeline_jobs.run_collect_all_job(
+            pipeline_jobs.CollectAllJobInput(
+                mode="full",
+                ufs=["AL", "BA", "CE"],
+                coletores=["pncp"],
+            )
+        )
+    except RuntimeError as exc:
+        assert "BA: falha PNCP BA" in str(exc)
+    else:
+        raise AssertionError("Esperava RuntimeError com resumo das falhas")
+
+    assert chamadas == ["AL", "BA", "CE"]
+
+
 def test_execute_pipeline_run_wraps_failed_step_with_partial_result():
     deps = pipeline_jobs.PipelineExecutionDeps(
         prepare_paths=lambda uf: None,

@@ -405,18 +405,30 @@ def run_collect_all_job(request: CollectAllJobInput) -> CollectAllJobResult:
     cauc_bulk_provider = (
         _build_cauc_bulk_provider() if "cauc" in request.coletores else None
     )
+    falhas: list[tuple[str, str]] = []
     for idx, uf in enumerate(request.ufs, start=1):
         print("\n" + "-" * 55)
         print(f"  COLETA ALL [{idx}/{total}] - {uf}")
         print("-" * 55)
         get_paths(uf)
-        run_collect_job(
-            CollectJobInput(
-                mode=request.mode,
-                uf=uf,
-                coletores=request.coletores,
-                cauc_bulk_provider=cauc_bulk_provider,
+        try:
+            run_collect_job(
+                CollectJobInput(
+                    mode=request.mode,
+                    uf=uf,
+                    coletores=request.coletores,
+                    cauc_bulk_provider=cauc_bulk_provider,
+                )
             )
+        except Exception as exc:
+            falhas.append((uf, str(exc)))
+            print(f"\n  [ERRO] coleta {uf} falhou, seguindo para a proxima UF: {exc}")
+
+    if falhas:
+        resumo = "; ".join(f"{uf}: {erro}" for uf, erro in falhas)
+        raise RuntimeError(
+            "Coleta multi-UF terminou com falhas, mas as demais UFs foram tentadas. "
+            f"Falhas: {resumo}"
         )
 
     return CollectAllJobResult(

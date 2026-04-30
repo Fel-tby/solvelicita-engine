@@ -30,7 +30,7 @@ if __package__ in (None, ""):
     sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
 
 from src.utils.paths import get_paths
-from src.utils.bigquery_loader import publish_raw_merge
+from src.utils.bigquery_loader import publish_raw_replace_slice
 from src.collectors.municipios import carregar_municipios
 
 BASE_URL_SICONFI = "https://apidatalake.tesouro.gov.br/ords/siconfi/tt"
@@ -617,11 +617,14 @@ def _flush_registros_lote(
         return
 
     df = pd.DataFrame(registros)
-    publish_raw_merge(
+    # SICONFI coleta uma fotografia completa da UF para os exercicios em memoria.
+    # Substituir uf + exercicio evita MERGEs caros que varrem a raw inteira a cada UF.
+    publish_raw_replace_slice(
         df,
         table=table,
         uf=uf,
         key_cols=key_cols,
+        slice_cols=["exercicio"],
     )
     registros.clear()
 

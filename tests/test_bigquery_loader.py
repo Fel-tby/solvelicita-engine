@@ -2,9 +2,11 @@ import pandas as pd
 
 from src.utils.bigquery_loader import (
     _build_merge_sql,
+    _build_replace_slice_sql,
     _dedupe_by_keys,
     _merge_max_gib_for_table,
     _normalize_key_columns,
+    _replace_slice_max_gib_for_table,
     _sanitize,
 )
 
@@ -59,6 +61,22 @@ def test_build_merge_sql_contains_keys_and_insert():
     assert "INSERT (`uf`, `cod_ibge`, `ano`, `valor`)" in sql
 
 
+def test_build_replace_slice_sql_deletes_only_requested_slice_before_insert():
+    sql = _build_replace_slice_sql(
+        target_ref="proj.raw.siconfi_rreo",
+        temp_ref="proj.raw.__tmp_siconfi_rreo",
+        cols=["uf", "cod_ibge", "exercicio", "valor"],
+        slice_cols=["exercicio"],
+    )
+
+    assert "BEGIN TRANSACTION;" in sql
+    assert "DELETE FROM `proj.raw.siconfi_rreo`" in sql
+    assert "`uf` = @uf AND `exercicio` IN UNNEST(@slice_exercicio)" in sql
+    assert "INSERT INTO `proj.raw.siconfi_rreo` (`uf`, `cod_ibge`, `exercicio`, `valor`)" in sql
+    assert "FROM `proj.raw.__tmp_siconfi_rreo`" in sql
+    assert "COMMIT TRANSACTION;" in sql
+
+
 def test_merge_max_gib_uses_table_default(monkeypatch):
     monkeypatch.delenv("BQ_MERGE_MAX_GIB_SICONFI_RREO", raising=False)
     monkeypatch.delenv("BQ_MERGE_MAX_GIB_DEFAULT", raising=False)
@@ -71,3 +89,17 @@ def test_merge_max_gib_specific_env_overrides_default(monkeypatch):
     monkeypatch.setenv("BQ_MERGE_MAX_GIB_SICONFI_RREO", "12.5")
 
     assert _merge_max_gib_for_table("siconfi_rreo") == 12.5
+
+
+def test_replace_slice_max_gib_uses_table_default(monkeypatch):
+    monkeypatch.delenv("BQ_REPLACE_SLICE_MAX_GIB_SICONFI_RREO", raising=False)
+    monkeypatch.delenv("BQ_REPLACE_SLICE_MAX_GIB_DEFAULT", raising=False)
+
+    assert _replace_slice_max_gib_for_table("siconfi_rreo") == 2.0
+
+
+def test_replace_slice_max_gib_specific_env_overrides_default(monkeypatch):
+    monkeypatch.setenv("BQ_REPLACE_SLICE_MAX_GIB_DEFAULT", "0.5")
+    monkeypatch.setenv("BQ_REPLACE_SLICE_MAX_GIB_SICONFI_RREO", "1.25")
+
+    assert _replace_slice_max_gib_for_table("siconfi_rreo") == 1.25

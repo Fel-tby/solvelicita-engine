@@ -7,8 +7,8 @@ A consolidação do JSONL para carga bruta no BigQuery é feita ao final
 da coleta, preservando o contrato consumido por dbt/models/staging/stg_pncp.sql.
 
 Rodar individualmente:
-    python src/collectors/pncp.py                      # full (desde 2025-01-01)
-    python src/collectors/pncp.py --mode incremental   # apenas últimos 2 meses
+    python src/collectors/pncp.py                      # full (ultimos 6 meses)
+    python src/collectors/pncp.py --mode incremental   # ultimos 6 meses
     python src/collectors/pncp.py --uf CE              # outro estado, full
     python src/collectors/pncp.py --mode incremental --uf CE
 """
@@ -19,9 +19,10 @@ import time
 import asyncio
 import httpx
 import logging
+import os
 import pandas as pd
 from pathlib import Path
-from datetime import date, datetime, timedelta, timezone
+from datetime import date, datetime, timezone
 from calendar import monthrange
 
 logging.getLogger("httpx").setLevel(logging.WARNING)
@@ -35,10 +36,11 @@ from src.utils.bigquery_loader import publish_raw_merge
 
 BASE_URL = "https://pncp.gov.br/api/consulta/v1/contratacoes/publicacao"
 
-# Reduzido para 2025-01-01 para maior performance
-DATA_INICIO_FULL       = date(2025, 1, 1)
-JANELA_INCREMENTAL_DIAS = 60
+# O mart PNCP usa uma janela movel de 6 meses; o coletor segue a mesma janela
+# para reduzir chamadas na API e evitar carga BigQuery de dados que o modelo ignora.
+JANELA_COLETA_MESES = 6
 COLETOR_VERSAO = "pncp_async_merge_v1"
+RESET_CHECKPOINT_ENV = "PNCP_RESET_CHECKPOINT"
 
 MODALIDADES = {
     1 : "Leilão Eletrônico",
@@ -63,6 +65,8 @@ HEADERS = {
 
 TAMANHO_PAGINA    = 50
 MAX_CONCORRENCIA  = 5
+MAX_PAGINAS_CONCORRENTES = 10
+MAX_RODADAS_PAGINAS = 3
 BACKOFF_429       = 60
 MAX_RETRIES       = 6
 
@@ -117,13 +121,100 @@ def gerar_meses(inicio: date, fim: date) -> list[tuple[date, date]]:
     ano, mes = inicio.year, inicio.month
     while date(ano, mes, 1) <= fim:
         ultimo_dia = monthrange(ano, mes)[1]
+        inicio_mes = max(date(ano, mes, 1), inicio)
         fim_mes    = min(date(ano, mes, ultimo_dia), fim)
-        meses.append((date(ano, mes, 1), fim_mes))
+        if inicio_mes <= fim_mes:
+            meses.append((inicio_mes, fim_mes))
         mes += 1
         if mes > 12:
             mes  = 1
             ano += 1
     return meses
+
+
+def subtrair_meses(data_ref: date, meses: int) -> date:
+    mes = data_ref.month - meses
+    ano = data_ref.year
+    while mes <= 0:
+        mes += 12
+        ano -= 1
+
+    dia = min(data_ref.day, monthrange(ano, mes)[1])
+    return date(ano, mes, dia)
+
+
+def deve_resetar_checkpoint() -> bool:
+    return os.getenv(RESET_CHECKPOINT_ENV, "").strip().lower() in {"1", "true", "yes", "sim"}
+
+
+def _params_tem_janela_valida(params: dict) -> bool:
+    try:
+        data_ini = datetime.strptime(str(params.get("dataInicial")), "%Y%m%d").date()
+        data_fim = datetime.strptime(str(params.get("dataFinal")), "%Y%m%d").date()
+    except (TypeError, ValueError):
+        return False
+    return data_ini <= data_fim and (data_fim - data_ini).days <= 365
+
+
+async def _coletar_paginas_restantes(
+    client: httpx.AsyncClient,
+    params_base: dict,
+    total_pags: int,
+    pausa_global: asyncio.Event,
+) -> tuple[list[dict], bool]:
+    """
+    Busca paginas 2..N em paralelo controlado.
+
+    SP e outros estados grandes podem ter centenas de paginas em uma unica
+    modalidade/mes. Buscar uma por uma transforma uma coleta de UF em horas.
+    """
+    if total_pags <= 1:
+        return [], True
+
+    page_sem = asyncio.Semaphore(MAX_PAGINAS_CONCORRENTES)
+
+    async def buscar_pagina(pag: int) -> tuple[int, dict | None]:
+        async with page_sem:
+            return pag, await fetch_com_backoff(
+                client,
+                {**params_base, "pagina": pag},
+                pausa_global,
+            )
+
+    registros_por_pagina: dict[int, list[dict]] = {}
+    pendentes = list(range(2, total_pags + 1))
+
+    for rodada in range(1, MAX_RODADAS_PAGINAS + 1):
+        tarefas = [buscar_pagina(pag) for pag in pendentes]
+        resultados = await asyncio.gather(*tarefas)
+
+        proximas_pendentes = []
+        for pag, resp_pag in sorted(resultados, key=lambda item: item[0]):
+            if resp_pag is None:
+                proximas_pendentes.append(pag)
+                continue
+            registros_por_pagina[pag] = list(resp_pag.get("data") or [])
+
+        pendentes = proximas_pendentes
+        if not pendentes:
+            break
+
+        espera = 15 * rodada
+        print(
+            f"\n  [WARNING] {len(pendentes)} pagina(s) PNCP ainda pendente(s) "
+            f"apos rodada {rodada}/{MAX_RODADAS_PAGINAS}: {pendentes[:10]}. "
+            f"Nova tentativa em {espera}s."
+        )
+        await asyncio.sleep(espera)
+
+    if pendentes:
+        print(f"\n  [ERROR] Falha definitiva nas paginas PNCP {pendentes} de {total_pags}")
+        return [], False
+
+    registros: list[dict] = []
+    for pag in range(2, total_pags + 1):
+        registros.extend(registros_por_pagina.get(pag, []))
+    return registros, True
 
 
 async def fetch_com_backoff(
@@ -149,7 +240,17 @@ async def fetch_com_backoff(
             if r.status_code in (500, 502, 503, 504):
                 await asyncio.sleep(15 * t)
                 continue
-            print(f"\n  [ERROR] HTTP {r.status_code}: {r.text[:120]}")
+            if r.status_code == 422 and _params_tem_janela_valida(params):
+                print(
+                    f"\n  [WARNING] HTTP 422 em janela PNCP valida; "
+                    f"tentativa {t}/{MAX_RETRIES}. params={params}"
+                )
+                await asyncio.sleep(10 * t)
+                continue
+            print(
+                f"\n  [ERROR] HTTP {r.status_code}: {r.text[:160]} | "
+                f"params={params}"
+            )
             return None
         except httpx.TimeoutException:
             await asyncio.sleep(10 * t)
@@ -167,6 +268,14 @@ async def coletar_bloco_async(
     semaforo:     asyncio.Semaphore,
     pausa_global: asyncio.Event,
 ) -> tuple[list, bool]:
+    if data_ini > data_fim:
+        print(
+            f"\n  [ERROR] janela PNCP invalida: "
+            f"uf={uf.upper()} modalidade={modalidade} "
+            f"data_ini={data_ini} data_fim={data_fim}"
+        )
+        return [], False
+
     params_base = {
         "dataInicial"                  : data_ini.strftime("%Y%m%d"),
         "dataFinal"                    : data_fim.strftime("%Y%m%d"),
@@ -186,12 +295,15 @@ async def coletar_bloco_async(
         registros   = list(resp["data"])
         total_pags  = resp.get("totalPaginas", 1)
 
-        for pag in range(2, total_pags + 1):
-            # Pequeno delay para não sobrecarregar em paginações profundas
-            await asyncio.sleep(0.5)
-            resp_pag = await fetch_com_backoff(client, {**params_base, "pagina": pag}, pausa_global)
-            if resp_pag and resp_pag.get("data"):
-                registros.extend(resp_pag["data"])
+        paginas, sucesso_paginas = await _coletar_paginas_restantes(
+            client,
+            params_base,
+            total_pags,
+            pausa_global,
+        )
+        registros.extend(paginas)
+        if not sucesso_paginas:
+            return registros, False
 
         return registros, True
 
@@ -247,7 +359,7 @@ async def orquestrar_coleta(
     meses: list[tuple[date, date]],
     json_path: Path,
     chaves_feitas: set[str]
-) -> None:
+) -> int:
     semaforo     = asyncio.Semaphore(MAX_CONCORRENCIA)
     pausa_global = asyncio.Event()
     pausa_global.set()
@@ -264,7 +376,7 @@ async def orquestrar_coleta(
     total_blocos = len(tarefas_params)
     if total_blocos == 0:
         print("  Todos os blocos já foram coletados!")
-        return
+        return 0
 
     print(f"  Iniciando extração assíncrona de {total_blocos} blocos pendentes...\n")
     progresso = Progresso(total_blocos)
@@ -280,6 +392,7 @@ async def orquestrar_coleta(
         await asyncio.gather(*tarefas)
 
     progresso.finalizar()
+    return progresso.erros
 
 
 def _consolidar_jsonl_para_raw(
@@ -382,9 +495,9 @@ def run(mode: str = "full", uf: str = "PB") -> None:
 
     Parâmetros
     ----------
-    mode : "full"        — coleta desde DATA_INICIO_FULL (2025-01-01).
+    mode : "full"        — recoleta a janela movel de 6 meses.
                            Se o JSONL já existir, apaga e reinicia do zero.
-           "incremental" — coleta apenas os últimos JANELA_INCREMENTAL_DIAS dias.
+           "incremental" — recoleta a mesma janela movel de 6 meses.
                            Usa o checkpoint JSONL existente (pula blocos já feitos).
     uf   : sigla do estado (default "PB")
     """
@@ -393,19 +506,20 @@ def run(mode: str = "full", uf: str = "PB") -> None:
 
     # Primário — nova estrutura UF subfolder
     snap_jsonl_novo = get_artifact_path(uf, "pncp_checkpoint")
+    reset_checkpoint = deve_resetar_checkpoint()
 
     if mode == "full":
-        data_inicio = DATA_INICIO_FULL
-        if snap_jsonl_novo.exists():
+        data_inicio = subtrair_meses(hoje, JANELA_COLETA_MESES)
+        if reset_checkpoint and snap_jsonl_novo.exists():
             snap_jsonl_novo.unlink()
             print(f"  [INFO] {snap_jsonl_novo.name} removido — coleta full reiniciada.")
     else:
-        data_inicio = hoje - timedelta(days=JANELA_INCREMENTAL_DIAS)
-        if snap_jsonl_novo.exists():
+        data_inicio = subtrair_meses(hoje, JANELA_COLETA_MESES)
+        if reset_checkpoint and snap_jsonl_novo.exists():
             snap_jsonl_novo.unlink()
             print(
                 f"  [INFO] {snap_jsonl_novo.name} removido — "
-                "incremental recoleta a janela movel e o BQ faz MERGE."
+                "coleta reiniciada por PNCP_RESET_CHECKPOINT."
             )
 
     t0    = time.time()
@@ -433,7 +547,12 @@ def run(mode: str = "full", uf: str = "PB") -> None:
             print(f"  [INFO] {len(chaves_feitas)} blocos já no JSONL — serão ignorados.")
 
     # Executa loop assíncrono
-    asyncio.run(orquestrar_coleta(uf, meses, snap_jsonl_novo, chaves_feitas))
+    erros = asyncio.run(orquestrar_coleta(uf, meses, snap_jsonl_novo, chaves_feitas))
+    if erros:
+        raise RuntimeError(
+            f"PNCP {uf}: {erros} bloco(s) falharam; upload para raw.pncp cancelado "
+            "para evitar carga parcial."
+        )
 
     elapsed = time.time() - t0
     print("  [BQ] Consolidando JSONL e enviando para raw.pncp...")
