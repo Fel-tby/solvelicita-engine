@@ -1,5 +1,5 @@
 WITH source AS (
-    SELECT * FROM {{ source('raw', 'siconfi_rreo') }}
+    SELECT * FROM {{ source('raw', var('siconfi_rreo_source', 'siconfi_rreo')) }}
 ),
 renamed AS (
     SELECT

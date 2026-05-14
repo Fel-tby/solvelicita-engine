@@ -1,6 +1,6 @@
 import pandas as pd
 from src.scorers import config as cfg_module
-from src.scorers.config import ANOS_REF, PESOS_ANO
+from src.scorers.config import ANOS_EORCAM_REF, PESOS_EORCAM_ANO
 
 
 def pontuar_eorcam(x: float):
@@ -23,8 +23,9 @@ def pontuar_eorcam(x: float):
 
 def calcular(df_si: pd.DataFrame, uf: str = "PB") -> pd.DataFrame:
     """
-    Média ponderada por recência (PESOS_ANO). 2020 tem peso 0 —
-    serve como reserva histórica mas não entra na média ponderada.
+    Media ponderada por recencia usando apenas exercicios fechados.
+    O ano corrente e ignorado porque RREO parcial compara receita realizada
+    acumulada contra previsao anual.
 
     Entrada : df_si com colunas [cod_ibge, ano, entregou_rreo, eorcam]
     Saída   : DataFrame [cod_ibge, eorcam_raw, eorcam_norm, contrib_eorcam]
@@ -32,12 +33,12 @@ def calcular(df_si: pd.DataFrame, uf: str = "PB") -> pd.DataFrame:
     pesos = cfg_module.get_pesos(uf)
 
     df_eo = df_si[
-        df_si["ano"].isin(ANOS_REF) &
+        df_si["ano"].isin(ANOS_EORCAM_REF) &
         df_si["entregou_rreo"] &
         df_si["eorcam"].notna()
     ].copy()
 
-    df_eo["peso_ano"] = df_eo["ano"].map(PESOS_ANO).fillna(0)
+    df_eo["peso_ano"] = df_eo["ano"].map(PESOS_EORCAM_ANO).fillna(0)
     df_eo = df_eo[df_eo["peso_ano"] > 0]
     df_eo["eorcam_w"] = df_eo["eorcam"] * df_eo["peso_ano"]
 

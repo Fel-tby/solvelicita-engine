@@ -10,6 +10,6 @@ SELECT
     receita_realizada
 FROM {{ ref('int_siconfi_base_anual') }}
 WHERE has_rgf_regime_prioritario
--- Dinamico: sempre cobre os ultimos 6 anos completos. Em 2026 = 2020 AND 2025.
-  AND ano BETWEEN EXTRACT(YEAR FROM CURRENT_DATE()) - 6
-              AND EXTRACT(YEAR FROM CURRENT_DATE()) - 1
+-- Janela SICONFI parametrizavel. Default: 2021 ate o ano corrente.
+  AND ano BETWEEN {{ var('siconfi_ano_inicio', '2021') }}
+              AND {{ var('siconfi_ano_fim', 'EXTRACT(YEAR FROM CURRENT_DATE())') }}

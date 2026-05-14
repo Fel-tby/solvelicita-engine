@@ -7,6 +7,7 @@ import logging
 import os
 import re
 import time
+from decimal import Decimal, InvalidOperation
 from pathlib import Path
 from uuid import uuid4
 
@@ -32,6 +33,13 @@ DEFAULT_MERGE_MAX_GIB_BY_TABLE = {
 DEFAULT_REPLACE_SLICE_MAX_GIB_BY_TABLE = {
     "siconfi_rgf": 1.0,
     "siconfi_rreo": 2.0,
+}
+RAW_MERGE_BLOCKLIST = {"siconfi_rgf", "siconfi_rreo"}
+SICONFI_TYPED_FIELDS = {
+    "exercicio": "INT64",
+    "periodo": "INT64",
+    "populacao": "INT64",
+    "valor": "NUMERIC",
 }
 
 
@@ -77,6 +85,26 @@ def _merge_max_gib_for_table(table: str) -> float | None:
         return default
 
     return DEFAULT_MERGE_MAX_GIB_BY_TABLE.get(table)
+
+
+def _is_raw_merge_blocked(table: str) -> bool:
+    return table in RAW_MERGE_BLOCKLIST or any(
+        table.startswith(f"{blocked}_") for blocked in RAW_MERGE_BLOCKLIST
+    )
+
+
+def _is_siconfi_table(table: str) -> bool:
+    return table.startswith("siconfi_rreo") or table.startswith("siconfi_rgf")
+
+
+def _ensure_raw_merge_allowed(table: str) -> None:
+    if not _is_raw_merge_blocked(table):
+        return
+
+    raise RuntimeError(
+        f"MERGE bloqueado para raw.{table}. Use replace-slice por uf/exercicio "
+        "para SICONFI; MERGE nessa raw pode varrer a tabela nacional inteira."
+    )
 
 
 def _replace_slice_max_gib_for_table(table: str) -> float | None:
@@ -153,6 +181,14 @@ def _print_replace_slice_cost(*, target_ref: str, uf: str, rows: int, slice_summ
         f"  [BQ] replace-slice concluido: {target_ref} | "
         f"uf={uf.upper()} | {slice_summary} | linhas={rows:,} | "
         f"billed={billed_gib:.3f} GiB | job={job_id}"
+    )
+
+
+def _print_append_slice_cost(*, target_ref: str, uf: str, rows: int, slice_summary: str, job) -> None:
+    job_id = getattr(job, "job_id", "")
+    print(
+        f"  [BQ] append-slice concluido: {target_ref} | "
+        f"uf={uf.upper()} | {slice_summary} | linhas={rows:,} | job={job_id}"
     )
 
 
@@ -413,6 +449,40 @@ def _sanitize(df: pd.DataFrame, uf: str) -> pd.DataFrame:
     return df
 
 
+def _to_decimal_or_none(value) -> Decimal | None:
+    if value is None or pd.isna(value):
+        return None
+
+    text = str(value).strip()
+    if text == "":
+        return None
+
+    try:
+        return Decimal(text.replace(",", "."))
+    except InvalidOperation as exc:
+        raise ValueError(f"Valor NUMERIC invalido para BigQuery: {value!r}") from exc
+
+
+def _coerce_raw_upload_types(df: pd.DataFrame, table: str) -> tuple[pd.DataFrame, dict[str, str]]:
+    if not _is_siconfi_table(table):
+        return df, {}
+
+    df = df.copy()
+    schema_types = {
+        col: field_type
+        for col, field_type in SICONFI_TYPED_FIELDS.items()
+        if col in df.columns
+    }
+
+    for col, field_type in schema_types.items():
+        if field_type == "INT64":
+            df[col] = pd.to_numeric(df[col], errors="coerce").astype("Int64")
+        elif field_type == "NUMERIC":
+            df[col] = df[col].apply(_to_decimal_or_none)
+
+    return df, schema_types
+
+
 def _normalize_key_columns(key_cols: list[str]) -> list[str]:
     return [_sanitize_column_name(col, i) for i, col in enumerate(key_cols)]
 
@@ -569,6 +639,7 @@ def publish_raw_merge(
     - valida UF/chaves antes de publicar
     - deduplica o lote pela chave natural
     """
+    _ensure_raw_merge_allowed(table)
     cfg = _cfg()
 
     if df.empty:
@@ -639,6 +710,8 @@ def publish_raw_replace_slice(
     uf: str,
     key_cols: list[str],
     slice_cols: list[str],
+    *,
+    ensure_target: bool = True,
 ) -> None:
     """
     Publica uma fatia raw.* por substituicao transacional.
@@ -690,6 +763,7 @@ def publish_raw_replace_slice(
             )
 
     df_upload = _dedupe_by_keys(df_upload, key_cols_norm, table, uf)
+    df_upload, schema_types = _coerce_raw_upload_types(df_upload, table)
 
     client = _get_client()
     target_ref = f"{cfg['project']}.{cfg['dataset']}.{table}"
@@ -698,7 +772,10 @@ def publish_raw_replace_slice(
         f"__tmp_replace_{table}_{uf.lower()}_{int(time.time())}_{uuid4().hex[:8]}"
     )
 
-    schema = [bigquery.SchemaField(col, "STRING") for col in df_upload.columns]
+    schema = [
+        bigquery.SchemaField(col, schema_types.get(col, "STRING"))
+        for col in df_upload.columns
+    ]
     load_config = bigquery.LoadJobConfig(
         write_disposition=bigquery.WriteDisposition.WRITE_TRUNCATE,
         schema=schema,
@@ -709,13 +786,18 @@ def publish_raw_replace_slice(
     ]
     slice_summary_parts = []
     for col in slice_cols_norm:
-        values = sorted(set(df_upload[col].dropna().astype(str).str.strip()))
+        if schema_types.get(col) == "INT64":
+            values = sorted({int(value) for value in df_upload[col].dropna().tolist()})
+            parameter_type = "INT64"
+        else:
+            values = sorted(set(df_upload[col].dropna().astype(str).str.strip()))
+            parameter_type = "STRING"
         if not values:
             raise ValueError(f"Coluna de fatia '{col}' nao tem valores validos.")
         query_parameters.append(
-            bigquery.ArrayQueryParameter(f"slice_{col}", "STRING", values)
+            bigquery.ArrayQueryParameter(f"slice_{col}", parameter_type, values)
         )
-        slice_summary_parts.append(f"{col}={','.join(values)}")
+        slice_summary_parts.append(f"{col}={','.join(str(value) for value in values)}")
 
     replace_sql = _build_replace_slice_sql(
         target_ref=target_ref,
@@ -726,7 +808,8 @@ def publish_raw_replace_slice(
 
     try:
         client.load_table_from_dataframe(df_upload, temp_ref, job_config=load_config).result()
-        _ensure_target_table(client, target_ref, list(df_upload.columns))
+        if ensure_target:
+            _ensure_target_table(client, target_ref, list(df_upload.columns))
 
         query_job = client.query(
             replace_sql,
@@ -753,6 +836,93 @@ def publish_raw_replace_slice(
         )
     finally:
         client.delete_table(temp_ref, not_found_ok=True)
+
+
+def publish_raw_append_slice(
+    df: pd.DataFrame,
+    table: str,
+    uf: str,
+    key_cols: list[str],
+    slice_cols: list[str],
+) -> None:
+    """
+    Publica uma fatia raw.* por append, sem DELETE.
+
+    Este caminho e para backfill inicial em tabela vazia/controlada. Nao use para
+    manutencao recorrente de uma fatia ja existente, pois append repetido duplica.
+    """
+    cfg = _cfg()
+
+    if df.empty:
+        print(f"  [BQ] aviso: lote vazio para raw.{table} ({uf.upper()})")
+        return
+
+    if not cfg["enabled"] or not _check_bq_available() or not cfg["sa_path"]:
+        logger.info(
+            "[BQ stub] publish_raw_append_slice ignorado: table=%s.%s uf=%s linhas=%d",
+            cfg["dataset"], table, uf.upper(), len(df),
+        )
+        return
+
+    from google.cloud import bigquery
+
+    df_upload = _sanitize(df, uf)
+    key_cols_norm = _normalize_key_columns(key_cols)
+    slice_cols_norm = _normalize_key_columns(slice_cols)
+    _validate_keys(df_upload, key_cols_norm, uf)
+
+    missing_slices = [col for col in slice_cols_norm if col not in df_upload.columns]
+    if missing_slices:
+        raise ValueError(
+            "Colunas de fatia ausentes para append-slice: "
+            + ", ".join(missing_slices)
+        )
+
+    for col in slice_cols_norm:
+        invalid = df_upload[col].isna() | (df_upload[col].astype(str).str.strip() == "")
+        if invalid.any():
+            raise ValueError(
+                f"Coluna de fatia '{col}' contem valores nulos/vazios em "
+                f"{int(invalid.sum())} linhas."
+            )
+
+    df_upload = _dedupe_by_keys(df_upload, key_cols_norm, table, uf)
+    df_upload, schema_types = _coerce_raw_upload_types(df_upload, table)
+
+    client = _get_client()
+    target_ref = f"{cfg['project']}.{cfg['dataset']}.{table}"
+    schema = [
+        bigquery.SchemaField(col, schema_types.get(col, "STRING"))
+        for col in df_upload.columns
+    ]
+    load_config = bigquery.LoadJobConfig(
+        write_disposition=bigquery.WriteDisposition.WRITE_APPEND,
+        schema=schema,
+    )
+
+    slice_summary_parts = []
+    for col in slice_cols_norm:
+        values = sorted(set(df_upload[col].dropna().astype(str).str.strip()))
+        if not values:
+            raise ValueError(f"Coluna de fatia '{col}' nao tem valores validos.")
+        slice_summary_parts.append(f"{col}={','.join(values)}")
+
+    job = client.load_table_from_dataframe(df_upload, target_ref, job_config=load_config)
+    job.result()
+    logger.info(
+        "[BQ] publish_raw_append_slice: %s uf=%s slices=%s linhas=%d",
+        target_ref,
+        uf.upper(),
+        ";".join(slice_summary_parts),
+        len(df_upload),
+    )
+    _print_append_slice_cost(
+        target_ref=target_ref,
+        uf=uf,
+        rows=len(df_upload),
+        slice_summary="; ".join(slice_summary_parts),
+        job=job,
+    )
 
 
 def read_mart(table: str, uf: str | None = None, *, strict: bool = False) -> pd.DataFrame:

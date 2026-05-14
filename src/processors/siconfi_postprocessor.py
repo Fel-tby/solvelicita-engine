@@ -19,7 +19,7 @@ from src.scorers.config import (
     JANELA_RGF_BIMESTRAL,
     JANELA_RGF_SEMESTRAL,
     LIMIAR_LLIQ_SUSPEITO,
-    PESOS_ANO,
+    PESOS_EORCAM_ANO,
 )
 from src.utils.bigquery_loader import (
     get_bigquery_project,
@@ -69,9 +69,9 @@ def _bq_mart_pop() -> pd.DataFrame:
 
 
 def _eorcam_ponderado(df: pd.DataFrame) -> pd.DataFrame:
-    """Media ponderada por PESOS_ANO. Grain: cod_ibge."""
+    """Media ponderada por exercicios fechados. Grain: cod_ibge."""
     df = df[df["entregou_rreo"] == True].copy()
-    df["peso"] = df["ano"].map(PESOS_ANO).fillna(0)
+    df["peso"] = df["ano"].map(PESOS_EORCAM_ANO).fillna(0)
     df = df[df["peso"] > 0]
     agg = (
         df.groupby("cod_ibge")

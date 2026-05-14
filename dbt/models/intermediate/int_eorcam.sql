@@ -9,7 +9,7 @@ SELECT
         THEN ROUND(receita_realizada / receita_prevista * 100, 6)
     END AS eorcam_raw
 FROM {{ ref('int_siconfi_base_anual') }}
--- Dinamico: sempre cobre os ultimos 6 anos completos. Em 2026 = 2020 AND 2025.
+-- Janela SICONFI parametrizavel. Default: 2021 ate o ano corrente.
 WHERE has_rreo_ultimo_periodo
-  AND ano BETWEEN EXTRACT(YEAR FROM CURRENT_DATE()) - 6
-              AND EXTRACT(YEAR FROM CURRENT_DATE()) - 1
+  AND ano BETWEEN {{ var('siconfi_ano_inicio', '2021') }}
+              AND {{ var('siconfi_ano_fim', 'EXTRACT(YEAR FROM CURRENT_DATE())') }}

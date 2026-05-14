@@ -5,7 +5,7 @@ from src.scorers.config import ANOS_REF, N_ANOS
 
 def calcular(df_si: pd.DataFrame, uf: str = "PB") -> pd.DataFrame:
     """
-    Conta anos com RREO entregue (2020–2025) e normaliza para [0, 1].
+    Conta anos com RREO entregue na janela ANOS_REF e normaliza para [0, 1].
     Cap duro de classificação é aplicado no engine/classifier.py.
 
     Entrada : df_si com colunas [cod_ibge, ano, entregou_rreo]

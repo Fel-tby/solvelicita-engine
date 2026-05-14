@@ -3,7 +3,7 @@ tests/test_scorers.py
 Testa cada scorer com dados reais dos fixtures.
 
 Municípios presentes nos fixtures e por que foram escolhidos:
-    2500304 Alagoa Grande -> entrega todos os 6 anos, rproc crônico (2020-22),
+    2500304 Alagoa Grande -> entrega todos os anos presentes na janela, rproc crônico (2021-22),
                              eorcam anômalo (152% em 2022), CAUC REGULAR
     2500502 Alagoinha     -> lliq alto (0.60 em 2023), eorcam abaixo de 70% (2020),
                              rproc crônico só em 2022 (4.86%)
@@ -17,6 +17,7 @@ Rodar:
 import sys
 from pathlib import Path
 from io import StringIO
+from datetime import date
 import pandas as pd
 import pytest
 
@@ -211,6 +212,32 @@ class TestEorcam:
 # CAUC — Risco de Bloqueio Federal
 # ══════════════════════════════════════════════════════════════════════════════
 
+def test_eorcam_ignora_ano_corrente_por_ser_exercicio_aberto():
+    """EORCAM nao usa o ano corrente porque o RREO ainda e parcial."""
+    ano_corrente = date.today().year
+    df = pd.DataFrame(
+        [
+            {
+                "cod_ibge": "9999999",
+                "ano": ano_corrente - 1,
+                "entregou_rreo": True,
+                "eorcam": 100.0,
+            },
+            {
+                "cod_ibge": "9999999",
+                "ano": ano_corrente,
+                "entregou_rreo": True,
+                "eorcam": 15.0,
+            },
+        ]
+    )
+
+    result = calcular_eorcam(df)
+
+    assert result.loc[0, "eorcam_raw"] == pytest.approx(100.0)
+    assert result.loc[0, "contrib_eorcam"] == PESOS["eorcam"]
+
+
 class TestCauc:
 
     def test_regular_sem_penalidade(self):
@@ -275,12 +302,12 @@ class TestCauc:
 class TestQsiconfi:
 
     def test_entregou_todos_os_anos(self):
-        """Alagoa Grande entregou 6/6 anos -> qsiconfi = 1.0, contrib = 15."""
+        """Alagoa Grande entregou 5/6 anos na janela 2021-2026 do fixture."""
         result = calcular_qsiconfi(carregar_siconfi())
         mun = result[result["cod_ibge"] == "2500304"].iloc[0]
-        assert mun["anos_entregues"]   == 6
-        assert mun["qsiconfi"]         == 1.0
-        assert mun["contrib_qsiconfi"] == PESOS["qsiconfi"]
+        assert mun["anos_entregues"]   == 5
+        assert mun["qsiconfi"]         == pytest.approx(5 / 6)
+        assert mun["contrib_qsiconfi"] == pytest.approx(12.5)
 
     def test_sem_rreo_aparece_com_zero_anos(self):
         """Água Branca nunca entregou RREO -> anos_entregues=0, contrib=0.
@@ -342,12 +369,11 @@ class TestRproc:
         assert pontuar_rproc_cronico(5) == 0.00
         assert pontuar_rproc_cronico(6) == 0.00
 
-    def test_alagoa_grande_3_anos_cronicos(self):
-        """Alagoa Grande: rproc_pct > 3% em 2020 (4.08), 2021 (3.89), 2022 (3.13)
-        -> n_anos_cronicos = 3."""
+    def test_alagoa_grande_2_anos_cronicos(self):
+        """Alagoa Grande: na janela 2021-2026, rproc_pct > 3% em 2021 e 2022."""
         result = calcular_rproc(carregar_siconfi())
         mun = result[result["cod_ibge"] == "2500304"].iloc[0]
-        assert mun["n_anos_cronicos"] == 3
+        assert mun["n_anos_cronicos"] == 2
 
     def test_alagoinha_1_ano_cronico(self):
         """Alagoinha: só 2022 está acima de 3% (4.86) -> n_anos_cronicos = 1."""

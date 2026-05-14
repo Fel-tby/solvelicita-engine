@@ -24,19 +24,27 @@ PESOS = {
 assert sum(PESOS.values()) == 100, "Pesos nao somam 100"
 
 # Anos de referencia
-# Dinamico: sempre cobre os ultimos 6 anos completos. Em 2026 = 2020 AND 2025.
-_ano_ref = date.today().year - 1  # ultimo ano com exercicio completo
-ANOS_REF = list(range(_ano_ref - 5, _ano_ref + 1))
-N_ANOS = 6
+# Dinamico: sempre cobre 2021 ate o ano corrente. Em 2026 = 2021 AND 2026.
+ANO_INICIO_REF = 2021
+_ano_ref = date.today().year
+ANOS_REF = list(range(ANO_INICIO_REF, _ano_ref + 1))
+N_ANOS = len(ANOS_REF)
 
-# Pesos de recencia para Eorcam
-# Dinamico: pesos acompanham os ultimos 5 anos fechados da janela. Em 2026 = 2021 AND 2025.
-PESOS_ANO = {
-    _ano_ref: 0.40,
-    _ano_ref - 1: 0.25,
-    _ano_ref - 2: 0.20,
-    _ano_ref - 3: 0.10,
-    _ano_ref - 4: 0.05,
+# Pesos de recencia para EORCAM.
+# EORCAM mede execucao orcamentaria anual; por isso usa apenas exercicios
+# fechados. Em 2026 = 2021..2025, com 2025 recebendo o maior peso.
+_ultimo_ano_eorcam = _ano_ref - 1
+ANOS_EORCAM_REF = list(
+    range(max(ANO_INICIO_REF, _ultimo_ano_eorcam - 4), _ultimo_ano_eorcam + 1)
+)
+_PESOS_EORCAM_BASE = [0.40, 0.25, 0.20, 0.10, 0.05]
+PESOS_EORCAM_ANO = {
+    ano: peso
+    for ano, peso in zip(
+        range(_ultimo_ano_eorcam, _ultimo_ano_eorcam - len(_PESOS_EORCAM_BASE), -1),
+        _PESOS_EORCAM_BASE,
+    )
+    if ano in ANOS_EORCAM_REF
 }
 
 # Limiares de classificacao (v7.0)

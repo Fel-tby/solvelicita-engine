@@ -238,3 +238,221 @@ def test_validar_buffer_publicacao_falha_acima_do_limite(monkeypatch):
         assert "siconfi_rreo" in str(exc)
     else:
         raise AssertionError("Esperava RuntimeError para buffer acima do limite")
+
+
+def test_adicionar_registros_por_exercicio_separa_buffers(monkeypatch):
+    monkeypatch.setattr(siconfi, "MAX_BUFFER_PUBLICACAO_LINHAS", 2)
+    buffers = {}
+
+    siconfi._adicionar_registros_por_exercicio(
+        buffers,
+        [
+            {"exercicio": 2025, "valor": 1},
+            {"exercicio": "2026", "valor": 2},
+            {"exercicio": 2025, "valor": 3},
+        ],
+        table="siconfi_rreo",
+        uf="PB",
+    )
+
+    assert sorted(buffers) == ["2025", "2026"]
+    assert [registro["valor"] for registro in buffers["2025"]] == [1, 3]
+    assert [registro["valor"] for registro in buffers["2026"]] == [2]
+
+
+def test_adicionar_registros_por_exercicio_valida_limite_por_ano(monkeypatch):
+    monkeypatch.setattr(siconfi, "MAX_BUFFER_PUBLICACAO_LINHAS", 1)
+
+    try:
+        siconfi._adicionar_registros_por_exercicio(
+            {},
+            [{"exercicio": 2025}, {"exercicio": 2025}],
+            table="siconfi_rreo",
+            uf="PB",
+        )
+    except RuntimeError as exc:
+        assert "Buffer SICONFI excedeu" in str(exc)
+    else:
+        raise AssertionError("Esperava RuntimeError para bucket anual acima do limite")
+
+
+def test_flush_registros_por_exercicio_publica_um_lote_por_ano(monkeypatch):
+    chamadas = []
+
+    def fake_flush(registros, *, table, uf, key_cols, publish_mode="replace"):
+        chamadas.append(
+            {
+                "exercicio": registros[0]["exercicio"],
+                "linhas": len(registros),
+                "table": table,
+                "uf": uf,
+                "key_cols": key_cols,
+            }
+        )
+        registros.clear()
+
+    monkeypatch.setattr(siconfi, "_flush_registros_lote", fake_flush)
+    buffers = {
+        "2026": [{"exercicio": 2026}],
+        "2025": [{"exercicio": 2025}, {"exercicio": 2025}],
+    }
+
+    siconfi._flush_registros_por_exercicio(
+        buffers,
+        table="siconfi_rreo",
+        uf="PB",
+        key_cols=siconfi.CHAVE_RREO,
+    )
+
+    assert chamadas == [
+        {
+            "exercicio": 2025,
+            "linhas": 2,
+            "table": "siconfi_rreo",
+            "uf": "PB",
+            "key_cols": siconfi.CHAVE_RREO,
+        },
+        {
+            "exercicio": 2026,
+            "linhas": 1,
+            "table": "siconfi_rreo",
+            "uf": "PB",
+            "key_cols": siconfi.CHAVE_RREO,
+        },
+    ]
+
+
+def test_normalizar_publish_mode_usa_env(monkeypatch):
+    monkeypatch.setenv(siconfi.SICONFI_PUBLISH_MODE_ENV, "append")
+
+    assert siconfi._normalizar_publish_mode() == "append"
+
+
+def test_normalizar_publish_mode_rejeita_valor_invalido():
+    try:
+        siconfi._normalizar_publish_mode("merge")
+    except ValueError as exc:
+        assert "append" in str(exc)
+        assert "replace" in str(exc)
+    else:
+        raise AssertionError("Esperava ValueError para publish_mode invalido")
+
+
+def test_flush_registros_lote_publica_replace_slice_sem_criar_destino(monkeypatch):
+    chamadas = []
+
+    def fake_publish(df, table, uf, key_cols, slice_cols, ensure_target=True):
+        chamadas.append(
+            {
+                "linhas": len(df),
+                "table": table,
+                "uf": uf,
+                "key_cols": key_cols,
+                "slice_cols": slice_cols,
+                "ensure_target": ensure_target,
+            }
+        )
+
+    monkeypatch.delenv(siconfi.SICONFI_TABLE_SUFFIX_ENV, raising=False)
+    monkeypatch.setattr(siconfi, "publish_raw_replace_slice", fake_publish)
+    registros = [
+        {
+            "uf": "PB",
+            "cod_ibge": "2500106",
+            "exercicio": 2025,
+            "periodo": 6,
+            "anexo": "RREO-Anexo 01",
+            "cod_conta": "1",
+            "coluna": "valor",
+            "conta": "Receita",
+            "esfera": "M",
+        }
+    ]
+
+    siconfi._flush_registros_lote(
+        registros,
+        table="siconfi_rreo",
+        uf="PB",
+        key_cols=siconfi.CHAVE_RREO,
+    )
+
+    assert chamadas == [
+        {
+            "linhas": 1,
+            "table": "siconfi_rreo",
+            "uf": "PB",
+            "key_cols": siconfi.CHAVE_RREO,
+            "slice_cols": ["exercicio"],
+            "ensure_target": False,
+        }
+    ]
+    assert registros == []
+
+
+def test_flush_registros_lote_publica_append_quando_solicitado(monkeypatch):
+    chamadas = []
+
+    def fake_append(df, table, uf, key_cols, slice_cols):
+        chamadas.append(
+            {
+                "linhas": len(df),
+                "table": table,
+                "uf": uf,
+                "key_cols": key_cols,
+                "slice_cols": slice_cols,
+            }
+        )
+
+    monkeypatch.delenv(siconfi.SICONFI_TABLE_SUFFIX_ENV, raising=False)
+    monkeypatch.setattr(siconfi, "publish_raw_append_slice", fake_append)
+    registros = [{"uf": "PB", "cod_ibge": "2500106", "exercicio": 2025}]
+
+    siconfi._flush_registros_lote(
+        registros,
+        table="siconfi_rreo",
+        uf="PB",
+        key_cols=siconfi.CHAVE_RREO,
+        publish_mode="append",
+    )
+
+    assert chamadas == [
+        {
+            "linhas": 1,
+            "table": "siconfi_rreo",
+            "uf": "PB",
+            "key_cols": siconfi.CHAVE_RREO,
+            "slice_cols": ["exercicio"],
+        }
+    ]
+    assert registros == []
+
+
+def test_flush_registros_lote_respeita_sufixo_de_destino(monkeypatch):
+    chamadas = []
+
+    def fake_publish(df, table, uf, key_cols, slice_cols, ensure_target=True):
+        chamadas.append({"table": table, "ensure_target": ensure_target})
+
+    monkeypatch.setenv(siconfi.SICONFI_TABLE_SUFFIX_ENV, "_v2")
+    monkeypatch.setattr(siconfi, "publish_raw_replace_slice", fake_publish)
+
+    siconfi._flush_registros_lote(
+        [{"uf": "PB", "cod_ibge": "2500106", "exercicio": 2025}],
+        table="siconfi_rreo",
+        uf="PB",
+        key_cols=siconfi.CHAVE_RREO,
+    )
+
+    assert chamadas == [{"table": "siconfi_rreo_v2", "ensure_target": False}]
+
+
+def test_siconfi_destination_table_rejeita_sufixo_sem_underscore(monkeypatch):
+    monkeypatch.setenv(siconfi.SICONFI_TABLE_SUFFIX_ENV, "v2")
+
+    try:
+        siconfi._siconfi_destination_table("siconfi_rreo")
+    except ValueError as exc:
+        assert siconfi.SICONFI_TABLE_SUFFIX_ENV in str(exc)
+        assert "_v2" in str(exc)
+    else:
+        raise AssertionError("Esperava ValueError para sufixo SICONFI invalido")

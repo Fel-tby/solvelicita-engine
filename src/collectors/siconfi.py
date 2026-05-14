@@ -6,7 +6,7 @@ semáforos de controle de tráfego e resiliência contra rate limits (429).
 Os dados brutos sao publicados diretamente nas tabelas raw do BigQuery.
 
 Rodar individualmente:
-    python src/collectors/siconfi.py                    # full PB (2020–hoje)
+    python src/collectors/siconfi.py                    # full PB (2021-hoje)
     python src/collectors/siconfi.py --mode incremental # apenas anos recentes
     python src/collectors/siconfi.py --uf CE            # outro estado, full
     python src/collectors/siconfi.py --mode incremental --uf CE
@@ -15,6 +15,7 @@ Rodar individualmente:
 import asyncio
 import httpx
 import logging
+import os
 import pandas as pd
 import re
 import sys
@@ -30,7 +31,7 @@ if __package__ in (None, ""):
     sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
 
 from src.utils.paths import get_paths
-from src.utils.bigquery_loader import publish_raw_replace_slice
+from src.utils.bigquery_loader import publish_raw_append_slice, publish_raw_replace_slice
 from src.collectors.municipios import carregar_municipios
 
 BASE_URL_SICONFI = "https://apidatalake.tesouro.gov.br/ords/siconfi/tt"
@@ -42,7 +43,7 @@ DF_OUTPUT_COD_IBGE = "5300108"
 DF_ENTITY_NAME = "Governo do Distrito Federal"
 DF_SCOPE_ESFERA = "E"
 
-ANOS_FULL        = [2020, 2021, 2022, 2023, 2024, 2025, 2026]
+ANOS_FULL        = list(range(2021, date.today().year + 1))
 ANOS_INCREMENTAL = [date.today().year - 1, date.today().year]
 
 ANEXOS_RREO = ["RREO-Anexo 01", "RREO-Anexo 07"]
@@ -74,6 +75,9 @@ CHAVE_RGF  = [
     "uf", "cod_ibge", "exercicio", "periodo", "periodicidade", "anexo",
     "cod_conta", "coluna", "conta", "esfera",
 ]
+
+SICONFI_TABLE_SUFFIX_ENV = "BQ_SICONFI_TABLE_SUFFIX"
+SICONFI_PUBLISH_MODE_ENV = "BQ_SICONFI_PUBLISH_MODE"
 
 
 def _norm_text(value: str | None) -> str:
@@ -612,6 +616,7 @@ def _flush_registros_lote(
     table: str,
     uf: str,
     key_cols: list[str],
+    publish_mode: str = "replace",
 ) -> None:
     if not registros:
         return
@@ -619,13 +624,26 @@ def _flush_registros_lote(
     df = pd.DataFrame(registros)
     # SICONFI coleta uma fotografia completa da UF para os exercicios em memoria.
     # Substituir uf + exercicio evita MERGEs caros que varrem a raw inteira a cada UF.
-    publish_raw_replace_slice(
-        df,
-        table=table,
-        uf=uf,
-        key_cols=key_cols,
-        slice_cols=["exercicio"],
-    )
+    target_table = _siconfi_destination_table(table)
+    if publish_mode == "append":
+        publish_raw_append_slice(
+            df,
+            table=target_table,
+            uf=uf,
+            key_cols=key_cols,
+            slice_cols=["exercicio"],
+        )
+    else:
+        publish_raw_replace_slice(
+            df,
+            table=target_table,
+            uf=uf,
+            key_cols=key_cols,
+            slice_cols=["exercicio"],
+            ensure_target=False,
+        )
+    if target_table != table:
+        print(f"  [BQ] SICONFI publicado em raw.{target_table} ({table} preservada).")
     registros.clear()
 
 
@@ -641,7 +659,78 @@ def _validar_buffer_publicacao(registros: list[dict], *, table: str, uf: str) ->
     )
 
 
-async def orquestrar_coleta(anos: list[int], uf: str) -> None:
+def _siconfi_destination_table(table: str) -> str:
+    suffix = os.getenv(SICONFI_TABLE_SUFFIX_ENV, "").strip()
+    if not suffix:
+        return table
+
+    if not re.fullmatch(r"_[A-Za-z0-9_]+", suffix):
+        raise ValueError(
+            f"{SICONFI_TABLE_SUFFIX_ENV} invalido: {suffix!r}. "
+            "Use um sufixo como _v2."
+        )
+
+    return f"{table}{suffix}"
+
+
+def _normalizar_publish_mode(publish_mode: str | None = None) -> str:
+    mode = (publish_mode or os.getenv(SICONFI_PUBLISH_MODE_ENV, "replace")).strip().lower()
+    if mode not in {"replace", "append"}:
+        raise ValueError(
+            f"Modo de publicacao SICONFI invalido: {mode!r}. "
+            "Use 'replace' para manutencao ou 'append' para backfill inicial."
+        )
+    return mode
+
+
+def _exercicio_buffer_key(registro: dict) -> str:
+    exercicio = registro.get("exercicio")
+    if exercicio is None or str(exercicio).strip() == "":
+        raise ValueError("Registro SICONFI sem exercicio; nao e seguro publicar.")
+    return str(exercicio).strip()
+
+
+def _adicionar_registros_por_exercicio(
+    buffers: dict[str, list[dict]],
+    registros: list[dict],
+    *,
+    table: str,
+    uf: str,
+) -> None:
+    novos_por_exercicio: dict[str, list[dict]] = {}
+    for registro in registros:
+        exercicio = _exercicio_buffer_key(registro)
+        novos_por_exercicio.setdefault(exercicio, []).append(registro)
+
+    for exercicio, novos in novos_por_exercicio.items():
+        bucket = buffers.setdefault(exercicio, [])
+        bucket.extend(novos)
+        _validar_buffer_publicacao(bucket, table=table, uf=uf)
+
+
+def _flush_registros_por_exercicio(
+    buffers: dict[str, list[dict]],
+    *,
+    table: str,
+    uf: str,
+    key_cols: list[str],
+    publish_mode: str = "replace",
+) -> None:
+    for exercicio in sorted(buffers):
+        registros = buffers[exercicio]
+        if not registros:
+            continue
+        print(f"  [BQ] Publicando {table} {uf.upper()} exercicio={exercicio}...")
+        _flush_registros_lote(
+            registros,
+            table=table,
+            uf=uf,
+            key_cols=key_cols,
+            publish_mode=publish_mode,
+        )
+
+
+async def orquestrar_coleta(anos: list[int], uf: str, *, publish_mode: str = "replace") -> None:
     uf_upper     = uf.upper()
     semaforo     = asyncio.Semaphore(MAX_CONCORRENCIA)
     pausa_global = asyncio.Event()
@@ -704,8 +793,8 @@ async def orquestrar_coleta(anos: list[int], uf: str) -> None:
 
         prog_rreo = Progresso(total_planos, "RREO")
         prog_rgf  = Progresso(total_planos, "RGF ")
-        buffer_rreo: list[dict] = []
-        buffer_rgf: list[dict] = []
+        buffer_rreo: dict[str, list[dict]] = {}
+        buffer_rgf: dict[str, list[dict]] = {}
 
         tarefas_coleta = [
             _coletar_pacote_municipio_ano(
@@ -736,17 +825,17 @@ async def orquestrar_coleta(anos: list[int], uf: str) -> None:
             )
 
             if registros_rreo:
-                buffer_rreo.extend(registros_rreo)
-                _validar_buffer_publicacao(
+                _adicionar_registros_por_exercicio(
                     buffer_rreo,
+                    registros_rreo,
                     table="siconfi_rreo",
                     uf=uf_upper,
                 )
 
             if registros_rgf:
-                buffer_rgf.extend(registros_rgf)
-                _validar_buffer_publicacao(
+                _adicionar_registros_por_exercicio(
                     buffer_rgf,
+                    registros_rgf,
                     table="siconfi_rgf",
                     uf=uf_upper,
                 )
@@ -757,21 +846,23 @@ async def orquestrar_coleta(anos: list[int], uf: str) -> None:
     print()
 
     if buffer_rreo:
-        _flush_registros_lote(
+        _flush_registros_por_exercicio(
             buffer_rreo,
             table="siconfi_rreo",
             uf=uf_upper,
             key_cols=CHAVE_RREO,
+            publish_mode=publish_mode,
         )
     else:
         print("  [WARN] RREO: nenhum dado retornado.")
 
     if buffer_rgf:
-        _flush_registros_lote(
+        _flush_registros_por_exercicio(
             buffer_rgf,
             table="siconfi_rgf",
             uf=uf_upper,
             key_cols=CHAVE_RGF,
+            publish_mode=publish_mode,
         )
     else:
         print("  [WARN] RGF: nenhum dado retornado.")
@@ -779,19 +870,22 @@ async def orquestrar_coleta(anos: list[int], uf: str) -> None:
     print(f"\n  Total: {(time.time() - inicio) / 60:.1f} minutos.")
 
 
-def run(mode: str = "full", uf: str = "PB") -> None:
+def run(mode: str = "full", uf: str = "PB", publish_mode: str | None = None) -> None:
     anos = ANOS_FULL if mode == "full" else ANOS_INCREMENTAL
+    publish_mode_norm = _normalizar_publish_mode(publish_mode)
     print(f"\n{'='*55}")
     print(f"  Crawler SICONFI — Municípios de {uf.upper()}")
     print(f"  Modo: {mode.upper()} | Anos: {anos}")
+    print(f"  Publicacao: {publish_mode_norm.upper()}")
     print(f"{'='*55}")
-    asyncio.run(orquestrar_coleta(anos, uf=uf))
+    asyncio.run(orquestrar_coleta(anos, uf=uf, publish_mode=publish_mode_norm))
 
 
 if __name__ == "__main__":
     args      = sys.argv[1:]
     mode_arg  = "full"
     uf_arg    = "PB"
+    publish_mode_arg = None
     for i, arg in enumerate(args):
         if arg == "--mode" and i + 1 < len(args):
             mode_arg = args[i + 1]
@@ -801,4 +895,8 @@ if __name__ == "__main__":
             uf_arg = args[i + 1]
         elif arg.startswith("--uf="):
             uf_arg = arg.split("=", 1)[1]
-    run(mode=mode_arg, uf=uf_arg)
+        elif arg == "--publish-mode" and i + 1 < len(args):
+            publish_mode_arg = args[i + 1]
+        elif arg.startswith("--publish-mode="):
+            publish_mode_arg = arg.split("=", 1)[1]
+    run(mode=mode_arg, uf=uf_arg, publish_mode=publish_mode_arg)

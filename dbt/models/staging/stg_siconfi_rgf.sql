@@ -1,4 +1,4 @@
-WITH source AS (SELECT * FROM {{ source('raw', 'siconfi_rgf') }}),
+WITH source AS (SELECT * FROM {{ source('raw', var('siconfi_rgf_source', 'siconfi_rgf')) }}),
 renamed AS (
 SELECT
     CAST(cod_ibge AS INT64)   AS cod_ibge,

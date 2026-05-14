@@ -90,7 +90,6 @@ docs/**
 !docs/METODOLOGIA.md
 !docs/VALIDACAO.md
 !docs/OPERACAO_GIT_MAIN_ROLLBACK.md
-!docs/PNCP_SICONFI_BQ_GUARDRAILS.md
 docs/_build/
 /site
 
@@ -100,6 +99,7 @@ docs/_build/
 
 # Raw: tudo ignorado por UF (arquivos grandes de snapshots)
 data/raw/
+data/sidecar/
 data/raw/**/*.csv
 data/raw/**/*.json
 data/raw/**/*.jsonl

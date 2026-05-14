@@ -3,11 +3,13 @@ import pandas as pd
 from src.utils.bigquery_loader import (
     _build_merge_sql,
     _build_replace_slice_sql,
+    _coerce_raw_upload_types,
     _dedupe_by_keys,
     _merge_max_gib_for_table,
     _normalize_key_columns,
     _replace_slice_max_gib_for_table,
     _sanitize,
+    publish_raw_merge,
 )
 
 
@@ -29,6 +31,44 @@ def test_sanitize_adds_and_normalizes_uf():
     result = _sanitize(df, "pb")
     assert "uf" in result.columns
     assert set(result["uf"].tolist()) == {"PB"}
+
+
+def test_coerce_raw_upload_types_tipifica_siconfi():
+    df = pd.DataFrame(
+        [
+            {
+                "uf": "PB",
+                "cod_ibge": "2500106",
+                "exercicio": "2025",
+                "periodo": "6",
+                "populacao": "1000",
+                "valor": "123.45",
+            }
+        ]
+    )
+
+    result, schema_types = _coerce_raw_upload_types(df, "siconfi_rreo_v2")
+
+    assert schema_types == {
+        "exercicio": "INT64",
+        "periodo": "INT64",
+        "populacao": "INT64",
+        "valor": "NUMERIC",
+    }
+    assert str(result["exercicio"].dtype) == "Int64"
+    assert str(result["periodo"].dtype) == "Int64"
+    assert str(result["populacao"].dtype) == "Int64"
+    assert str(result["valor"].iloc[0]) == "123.45"
+
+
+def test_coerce_raw_upload_types_preserva_tabelas_nao_siconfi():
+    df = pd.DataFrame([{"exercicio": "2025", "valor": "123.45"}])
+
+    result, schema_types = _coerce_raw_upload_types(df, "dca")
+
+    assert schema_types == {}
+    assert result is df
+    assert result["exercicio"].iloc[0] == "2025"
 
 
 def test_dedupe_by_keys_keeps_last():
@@ -89,6 +129,32 @@ def test_merge_max_gib_specific_env_overrides_default(monkeypatch):
     monkeypatch.setenv("BQ_MERGE_MAX_GIB_SICONFI_RREO", "12.5")
 
     assert _merge_max_gib_for_table("siconfi_rreo") == 12.5
+
+
+def test_publish_raw_merge_bloqueia_siconfi_mesmo_sem_bigquery_configurado():
+    df = pd.DataFrame(
+        [
+            {
+                "uf": "PB",
+                "cod_ibge": "2500106",
+                "exercicio": 2025,
+                "periodo": 6,
+            }
+        ]
+    )
+
+    try:
+        publish_raw_merge(
+            df,
+            table="siconfi_rreo",
+            uf="PB",
+            key_cols=["uf", "cod_ibge", "exercicio", "periodo"],
+        )
+    except RuntimeError as exc:
+        assert "MERGE bloqueado" in str(exc)
+        assert "siconfi_rreo" in str(exc)
+    else:
+        raise AssertionError("Esperava bloqueio de MERGE para raw.siconfi_rreo")
 
 
 def test_replace_slice_max_gib_uses_table_default(monkeypatch):

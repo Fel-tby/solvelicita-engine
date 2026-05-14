@@ -18,7 +18,7 @@ models:
 
   - name: int_eorcam
     description: >
-      Execução orçamentária bruta por município/ano (2020–2025).
+      Execução orçamentária bruta por município/ano (2021 ate o ano corrente).
       Grain: (cod_ibge, ano). Postprocessor aplica PESOS_ANO no Bloco 7.
     columns:
       - name: cod_ibge
@@ -75,7 +75,7 @@ models:
 
   - name: int_qsiconfi
     description: >
-      Anos com RREO entregue por município (2020–2025).
+      Anos com RREO entregue por município (2021 ate o ano corrente).
       Grain: (cod_ibge). JOIN direto no mart do Bloco 7.
     columns:
       - name: cod_ibge
