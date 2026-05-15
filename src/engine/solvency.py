@@ -17,7 +17,12 @@ if __package__ in (None, ""):
 
 from src.utils.paths import get_artifact_path
 from src.scorers import config as cfg_module
-from src.scorers.config import N_ANOS_CRONICOS_CAP_MEDIO, N_ANOS, get_limiar_autonomia_crit
+from src.scorers.config import (
+    ICF_FATOR_SEM_REGISTRO,
+    N_ANOS,
+    N_ANOS_CRONICOS_CAP_MEDIO,
+    get_limiar_autonomia_crit,
+)
 from src.scorers.lliq_scorer import calcular as calcular_lliq, pontuar_lliq
 from src.scorers.eorcam_scorer import calcular as calcular_eorcam, pontuar_eorcam
 from src.scorers.qsiconfi_scorer import calcular as calcular_qsiconfi
@@ -26,7 +31,7 @@ from src.scorers.autonomia_scorer import carregar_dca as calcular_autonomia, pon
 from src.scorers.rproc_scorer import calcular as calcular_rproc, pontuar_rproc_cronico
 from src.engine.classifier import classificar, ORDEM_SORT
 
-VERSION = "v7.0"
+VERSION = "v8.0"
 
 # PNCP e usado como enriquecimento de mercado, sem alterar o score fiscal.
 # Dispensa preserva o nome historico, mas representa apenas modalidade 8.
@@ -48,6 +53,43 @@ PNCP_COLS = [
     "pct_contratacao_direta",
     "ano_ultima_licitacao",
     "alerta_dispensa",
+]
+
+SICONFI_POST_COLS = [
+    "cod_ibge",
+    "eorcam_raw",
+    "eorcam_icf_fator",
+    "eorcam_icf_previo",
+    "eorcam_icf_defasado",
+    "eorcam_icf_sem_registro",
+    "lliq_ano",
+    "lliq_raw",
+    "lliq_parcial",
+    "dias_atraso",
+    "decay_fator",
+    "dado_suspeito_lliq",
+    "dado_defasado",
+    "lliq_icf_fator",
+    "lliq_icf_exercicio",
+    "lliq_icf_status",
+    "lliq_icf_conceito",
+    "lliq_icf_previo",
+    "lliq_icf_defasado",
+    "lliq_icf_sem_registro",
+    "rproc_icf_fator",
+    "rproc_icf_previo",
+    "rproc_icf_defasado",
+    "rproc_icf_sem_registro",
+]
+
+DCA_POST_COLS = [
+    "cod_ibge",
+    "autonomia_media",
+    "autonomia_critica",
+    "autonomia_icf_fator",
+    "autonomia_icf_previo",
+    "autonomia_icf_defasado",
+    "autonomia_icf_sem_registro",
 ]
 
 
@@ -125,6 +167,8 @@ def _carregar_bq(uf: str, *, strict_bigquery: bool = False) -> pd.DataFrame:
     legacy_cols = [
         "eorcam_raw", "lliq_raw", "lliq_parcial", "dias_atraso", "decay_fator",
         "dado_suspeito_lliq", "dado_defasado", "autonomia_media", "autonomia_critica",
+        *[col for col in SICONFI_POST_COLS if col != "cod_ibge"],
+        *[col for col in DCA_POST_COLS if col != "cod_ibge"],
         *[col for col in PNCP_COLS if col != "cod_ibge"],
     ]
     df = df.drop(columns=[c for c in legacy_cols if c in df.columns])
@@ -153,23 +197,20 @@ def _carregar_bq(uf: str, *, strict_bigquery: bool = False) -> pd.DataFrame:
         df_siconfi = read_intermediate("int_siconfi_postprocessed", uf=uf, strict=True)
         if not df_siconfi.empty:
             df_siconfi["cod_ibge"] = df_siconfi["cod_ibge"].astype(str).str.zfill(7)
-            siconfi_cols = ["cod_ibge", "eorcam_raw", "lliq_raw", "lliq_parcial", "dias_atraso", "decay_fator", "dado_suspeito_lliq", "dado_defasado"]
-            df_siconfi = df_siconfi[[c for c in siconfi_cols if c in df_siconfi.columns]]
+            df_siconfi = df_siconfi[[c for c in SICONFI_POST_COLS if c in df_siconfi.columns]]
             df = df.merge(df_siconfi, on="cod_ibge", how="left")
 
         df_dca = read_intermediate("int_dca_postprocessed", uf=uf, strict=True)
         if not df_dca.empty:
             df_dca["cod_ibge"] = df_dca["cod_ibge"].astype(str).str.zfill(7)
-            dca_cols = ["cod_ibge", "autonomia_media", "autonomia_critica"]
-            df_dca = df_dca[[c for c in dca_cols if c in df_dca.columns]]
+            df_dca = df_dca[[c for c in DCA_POST_COLS if c in df_dca.columns]]
             df = df.merge(df_dca, on="cod_ibge", how="left")
     else:
         try:
             df_siconfi = read_intermediate("int_siconfi_postprocessed", uf=uf, strict=False)
             if not df_siconfi.empty:
                 df_siconfi["cod_ibge"] = df_siconfi["cod_ibge"].astype(str).str.zfill(7)
-                siconfi_cols = ["cod_ibge", "eorcam_raw", "lliq_raw", "lliq_parcial", "dias_atraso", "decay_fator", "dado_suspeito_lliq", "dado_defasado"]
-                df_siconfi = df_siconfi[[c for c in siconfi_cols if c in df_siconfi.columns]]
+                df_siconfi = df_siconfi[[c for c in SICONFI_POST_COLS if c in df_siconfi.columns]]
                 df = df.merge(df_siconfi, on="cod_ibge", how="left")
         except Exception as e:
             print(f"  ⚠️ Erro ao carregar int_siconfi_postprocessed: {e}")
@@ -178,8 +219,7 @@ def _carregar_bq(uf: str, *, strict_bigquery: bool = False) -> pd.DataFrame:
             df_dca = read_intermediate("int_dca_postprocessed", uf=uf, strict=False)
             if not df_dca.empty:
                 df_dca["cod_ibge"] = df_dca["cod_ibge"].astype(str).str.zfill(7)
-                dca_cols = ["cod_ibge", "autonomia_media", "autonomia_critica"]
-                df_dca = df_dca[[c for c in dca_cols if c in df_dca.columns]]
+                df_dca = df_dca[[c for c in DCA_POST_COLS if c in df_dca.columns]]
                 df = df.merge(df_dca, on="cod_ibge", how="left")
         except Exception as e:
             print(f"  ⚠️ Erro ao carregar int_dca_postprocessed: {e}")
@@ -197,8 +237,21 @@ def _carregar_bq(uf: str, *, strict_bigquery: bool = False) -> pd.DataFrame:
         print(f"  CAUC exportado local: {csv_cauc.name}")
 
     # Tipos — BQ retorna correto mas colunas com NULL viram object no pandas
-    for col in ["eorcam_raw", "lliq_raw", "autonomia_media", "rproc_pct_atual",
-                "decay_fator", "ccauc", "dias_atraso"]:
+    for col in [
+        "eorcam_raw",
+        "lliq_raw",
+        "autonomia_media",
+        "rproc_pct_atual",
+        "decay_fator",
+        "ccauc",
+        "dias_atraso",
+        "eorcam_icf_fator",
+        "lliq_icf_fator",
+        "rproc_icf_fator",
+        "autonomia_icf_fator",
+        "lliq_icf_exercicio",
+        "lliq_ano",
+    ]:
         if col in df.columns:
             df[col] = pd.to_numeric(df[col], errors="coerce")
 
@@ -206,23 +259,60 @@ def _carregar_bq(uf: str, *, strict_bigquery: bool = False) -> pd.DataFrame:
         if col in df.columns:
             df[col] = pd.to_numeric(df[col], errors="coerce").fillna(0).astype(int)
 
-    for col in ["lliq_parcial", "dado_suspeito_lliq", "dado_defasado", "autonomia_critica"]:
+    for col in [
+        "lliq_parcial",
+        "dado_suspeito_lliq",
+        "dado_defasado",
+        "autonomia_critica",
+        "eorcam_icf_previo",
+        "eorcam_icf_defasado",
+        "eorcam_icf_sem_registro",
+        "lliq_icf_previo",
+        "lliq_icf_defasado",
+        "lliq_icf_sem_registro",
+        "rproc_icf_previo",
+        "rproc_icf_defasado",
+        "rproc_icf_sem_registro",
+        "autonomia_icf_previo",
+        "autonomia_icf_defasado",
+        "autonomia_icf_sem_registro",
+    ]:
         if col in df.columns:
             df[col] = df[col].map(lambda v: bool(v) if pd.notnull(v) else False)
+
+    for col in [
+        "eorcam_icf_fator",
+        "lliq_icf_fator",
+        "rproc_icf_fator",
+        "autonomia_icf_fator",
+    ]:
+        if col not in df.columns:
+            df[col] = ICF_FATOR_SEM_REGISTRO
+        df[col] = (
+            pd.to_numeric(df[col], errors="coerce")
+            .fillna(ICF_FATOR_SEM_REGISTRO)
+            .clip(lower=ICF_FATOR_SEM_REGISTRO, upper=1.0)
+        )
 
     # Norms — to_numeric garante float64 mesmo quando pontuar_* retorna None
     if "eorcam_raw" in df.columns:
         df["eorcam_norm"]    = pd.to_numeric(df["eorcam_raw"].apply(pontuar_eorcam),    errors="coerce")
-        df["contrib_eorcam"] = (pesos["eorcam"] * df["eorcam_norm"].fillna(0)).round(4)
+        df["contrib_eorcam_base"] = (pesos["eorcam"] * df["eorcam_norm"].fillna(0)).round(4)
+        df["contrib_eorcam"] = (
+            df["contrib_eorcam_base"] * df["eorcam_icf_fator"]
+        ).round(4)
     else:
+        df["contrib_eorcam_base"] = 0
         df["contrib_eorcam"] = 0
 
     if "lliq_raw" in df.columns:
         df["lliq_norm"]    = pd.to_numeric(df["lliq_raw"].apply(pontuar_lliq),        errors="coerce")
-        df["contrib_lliq"] = (
+        df["contrib_lliq_base"] = (
             pesos["lliq"] * df["lliq_norm"].fillna(0) * df.get("decay_fator", pd.Series(1.0, index=df.index)).fillna(1.0)
         ).round(4)
+        df["contrib_lliq"] = (df["contrib_lliq_base"] * df["lliq_icf_fator"]).round(4)
     else:
+        df["contrib_lliq_base"] = 0
         df["contrib_lliq"] = 0
 
     if "anos_entregues" in df.columns:
@@ -241,15 +331,35 @@ def _carregar_bq(uf: str, *, strict_bigquery: bool = False) -> pd.DataFrame:
             df.apply(lambda r: pontuar_autonomia(r["autonomia_media"], r["populacao"], uf), axis=1),
             errors="coerce"
         )
-        df["contrib_autonomia"] = (pesos["autonomia"] * df["autonomia_norm"].fillna(0)).round(4)
+        df["contrib_autonomia_base"] = (
+            pesos["autonomia"] * df["autonomia_norm"].fillna(0)
+        ).round(4)
+        df["contrib_autonomia"] = (
+            df["contrib_autonomia_base"] * df["autonomia_icf_fator"]
+        ).round(4)
     else:
+        df["contrib_autonomia_base"] = 0
         df["contrib_autonomia"] = 0
 
     if "n_anos_cronicos" in df.columns:
         df["rproc_norm"]    = pd.to_numeric(df["n_anos_cronicos"].apply(pontuar_rproc_cronico), errors="coerce")
-        df["contrib_rproc"] = (pesos["rproc"] * df["rproc_norm"].fillna(0)).round(4)
+        df["contrib_rproc_base"] = (pesos["rproc"] * df["rproc_norm"].fillna(0)).round(4)
+        df["contrib_rproc"] = (df["contrib_rproc_base"] * df["rproc_icf_fator"]).round(4)
     else:
+        df["contrib_rproc_base"] = 0
         df["contrib_rproc"] = 0
+
+    total_peso_icf = pesos["lliq"] + pesos["eorcam"] + pesos["autonomia"] + pesos["rproc"]
+    if total_peso_icf > 0:
+        df["icf_fator_medio"] = (
+            df["lliq_icf_fator"] * pesos["lliq"]
+            + df["eorcam_icf_fator"] * pesos["eorcam"]
+            + df["autonomia_icf_fator"] * pesos["autonomia"]
+            + df["rproc_icf_fator"] * pesos["rproc"]
+        ) / total_peso_icf
+        df["icf_fator_medio"] = df["icf_fator_medio"].round(6)
+    else:
+        df["icf_fator_medio"] = 1.0
 
     return df
 
@@ -293,7 +403,23 @@ def run(
         if col not in df.columns:
             df[col] = 0.0
 
+    for base_col, final_col in [
+        ("contrib_lliq_base", "contrib_lliq"),
+        ("contrib_eorcam_base", "contrib_eorcam"),
+        ("contrib_autonomia_base", "contrib_autonomia"),
+        ("contrib_rproc_base", "contrib_rproc"),
+    ]:
+        if base_col not in df.columns:
+            df[base_col] = df[final_col]
+
+    if "icf_fator_medio" not in df.columns:
+        df["icf_fator_medio"] = 1.0
+
     # score
+    df["score_base_pre_icf"] = (
+        df["contrib_lliq_base"] + df["contrib_eorcam_base"] + df["contrib_qsiconfi"] +
+        df["contrib_ccauc"] + df["contrib_autonomia_base"] + df["contrib_rproc_base"]
+    )
     df["score_base"] = (
         df["contrib_lliq"] + df["contrib_eorcam"] + df["contrib_qsiconfi"] +
         df["contrib_ccauc"] + df["contrib_autonomia"] + df["contrib_rproc"]
@@ -349,10 +475,23 @@ def run(
         "n_anos_cronicos", "qsiconfi", "ccauc", "autonomia_media",
         "n_graves", "n_moderadas", "n_leves", "pendencias", "pendencias_cauc_json",
         "eorcam_norm", "lliq_norm", "rproc_norm", "autonomia_norm",
+        "icf_fator_medio",
         "contrib_eorcam", "contrib_lliq", "contrib_qsiconfi",
         "contrib_ccauc", "contrib_autonomia", "contrib_rproc",
-        "pen_lliq_parcial", "pen_situacional", "score_base", "score_bruto",
+        "contrib_eorcam_base", "contrib_lliq_base",
+        "contrib_autonomia_base", "contrib_rproc_base",
+        "pen_lliq_parcial", "pen_situacional", "score_base_pre_icf",
+        "score_base", "score_bruto",
         "dias_atraso", "decay_fator",
+        "eorcam_icf_fator", "eorcam_icf_previo", "eorcam_icf_defasado",
+        "eorcam_icf_sem_registro",
+        "lliq_ano", "lliq_icf_exercicio", "lliq_icf_status",
+        "lliq_icf_conceito", "lliq_icf_fator", "lliq_icf_previo",
+        "lliq_icf_defasado", "lliq_icf_sem_registro",
+        "rproc_icf_fator", "rproc_icf_previo", "rproc_icf_defasado",
+        "rproc_icf_sem_registro",
+        "autonomia_icf_fator", "autonomia_icf_previo",
+        "autonomia_icf_defasado", "autonomia_icf_sem_registro",
         "dado_suspeito", "dado_suspeito_lliq", "dado_defasado",
         "lliq_parcial", "autonomia_critica",
         "n_licitacoes", "n_com_valor_homologado", "n_sem_valor_homologado",

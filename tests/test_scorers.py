@@ -307,7 +307,7 @@ class TestQsiconfi:
         mun = result[result["cod_ibge"] == "2500304"].iloc[0]
         assert mun["anos_entregues"]   == 5
         assert mun["qsiconfi"]         == pytest.approx(5 / 6)
-        assert mun["contrib_qsiconfi"] == pytest.approx(12.5)
+        assert mun["contrib_qsiconfi"] == pytest.approx(0.0)
 
     def test_sem_rreo_aparece_com_zero_anos(self):
         """Água Branca nunca entregou RREO -> anos_entregues=0, contrib=0.
@@ -318,7 +318,7 @@ class TestQsiconfi:
         assert mun["contrib_qsiconfi"] == 0.0
 
     def test_contrib_dentro_do_peso(self):
-        """contrib_qsiconfi em [0, 15]."""
+        """contrib_qsiconfi fica zerado; Qsiconfi agora e cap/coverage."""
         result = calcular_qsiconfi(carregar_siconfi())
         assert (result["contrib_qsiconfi"] >= 0).all()
         assert (result["contrib_qsiconfi"] <= PESOS["qsiconfi"]).all()

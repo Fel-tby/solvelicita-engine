@@ -1,5 +1,5 @@
 # Sem imports de projeto; seguro importar de qualquer lugar sem sys.path
-# Versao: 7.0 | Atualizado: Marco/2026
+# Versao: 8.0 | Atualizado: Maio/2026
 
 from datetime import date
 
@@ -14,14 +14,26 @@ from src.config.br_regions import (
 
 # Pesos dos indicadores
 PESOS = {
-    "lliq": 35,       # v6.2: 30 -> +5 (melhor preditor, AUC=0.691)
-    "ccauc": 10,      # v6.2: 20 -> -10 (AUC=0 no backtest; peso excessivo)
-    "eorcam": 15,     # v6.2: 20 -> -5 (AUC sub-aleatorio como preditor isolado)
-    "qsiconfi": 15,   # v6.2: 15 -> sem alteracao
-    "autonomia": 10,  # v6.2: 10 -> sem alteracao
-    "rproc": 15,      # v6.2: 5 -> +10 (AUC=0.609; 3x mais preditivo que eorcam)
+    "lliq": 40,
+    "ccauc": 10,
+    "eorcam": 15,
+    "qsiconfi": 0,
+    "autonomia": 15,
+    "rproc": 20,
 }
 assert sum(PESOS.values()) == 100, "Pesos nao somam 100"
+
+# Fator de confianca do Ranking SICONFI ICF. O fator nunca aumenta score:
+# apenas reduz as contribuicoes derivadas de informacao contabil/fiscal
+# autodeclarada ao Tesouro.
+ICF_FATORES = {
+    "A": 1.00,
+    "B": 0.95,
+    "C": 0.90,
+    "D": 0.85,
+    "E": 0.80,
+}
+ICF_FATOR_SEM_REGISTRO = 0.80
 
 # Anos de referencia
 # Dinamico: sempre cobre 2021 ate o ano corrente. Em 2026 = 2021 AND 2026.

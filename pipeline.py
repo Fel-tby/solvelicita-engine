@@ -131,7 +131,7 @@ def normalizar_coletores(raw: str | None) -> list[str] | None:
     if invalidos:
         raise ValueError(
             f"  Erro: coletores invalidos: {invalidos}. "
-            "Use: municipios, cauc, siconfi, dca, pncp."
+            "Use: municipios, cauc, siconfi, siconfi_icf, dca, pncp."
         )
 
     selecionados = []

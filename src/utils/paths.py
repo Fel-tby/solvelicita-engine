@@ -79,6 +79,13 @@ ARTIFACT_SPECS: dict[str, LocalArtifactSpec] = {
         role=ROLE_CANONICAL,
         description="Indicadores SICONFI locais consumidos pelo modo CSV legado.",
     ),
+    "siconfi_icf": LocalArtifactSpec(
+        key="siconfi_icf",
+        bucket="processed",
+        filename_template="siconfi_icf_{uf_lower}.csv",
+        role=ROLE_AUDIT,
+        description="Ranking ICF SICONFI por exercicio, usado como modulador de confianca.",
+    ),
     "mart_indicadores": LocalArtifactSpec(
         key="mart_indicadores",
         bucket="processed",

@@ -7,7 +7,7 @@ import logging
 import os
 import re
 import time
-from decimal import Decimal, InvalidOperation
+from decimal import Decimal, InvalidOperation, ROUND_HALF_UP
 from pathlib import Path
 from uuid import uuid4
 
@@ -31,16 +31,27 @@ DEFAULT_MERGE_MAX_GIB_BY_TABLE = {
     "siconfi_rreo": 10.0,
 }
 DEFAULT_REPLACE_SLICE_MAX_GIB_BY_TABLE = {
+    "siconfi_icf": 0.5,
     "siconfi_rgf": 1.0,
     "siconfi_rreo": 2.0,
 }
-RAW_MERGE_BLOCKLIST = {"siconfi_rgf", "siconfi_rreo"}
+RAW_MERGE_BLOCKLIST = {"siconfi_icf", "siconfi_rgf", "siconfi_rreo"}
 SICONFI_TYPED_FIELDS = {
+    "dim_i": "NUMERIC",
+    "dim_ii": "NUMERIC",
+    "dim_iii": "NUMERIC",
+    "dim_iv": "NUMERIC",
+    "edicao_ranking": "INT64",
     "exercicio": "INT64",
+    "fator_icf": "NUMERIC",
     "periodo": "INT64",
+    "percentual_acertos": "NUMERIC",
     "populacao": "INT64",
+    "posicao_ranking": "INT64",
+    "total_pontos": "NUMERIC",
     "valor": "NUMERIC",
 }
+BQ_NUMERIC_SCALE = Decimal("0.000000001")
 
 
 def _check_bq_available() -> bool:
@@ -94,7 +105,7 @@ def _is_raw_merge_blocked(table: str) -> bool:
 
 
 def _is_siconfi_table(table: str) -> bool:
-    return table.startswith("siconfi_rreo") or table.startswith("siconfi_rgf")
+    return table.startswith("siconfi_")
 
 
 def _ensure_raw_merge_allowed(table: str) -> None:
@@ -458,7 +469,8 @@ def _to_decimal_or_none(value) -> Decimal | None:
         return None
 
     try:
-        return Decimal(text.replace(",", "."))
+        numeric = Decimal(text.replace(",", "."))
+        return numeric.quantize(BQ_NUMERIC_SCALE, rounding=ROUND_HALF_UP).normalize()
     except InvalidOperation as exc:
         raise ValueError(f"Valor NUMERIC invalido para BigQuery: {value!r}") from exc
 
@@ -566,21 +578,31 @@ COMMIT TRANSACTION;
 """.strip()
 
 
-def _ensure_target_table(client, target_ref: str, cols: list[str]) -> None:
+def _ensure_target_table(
+    client,
+    target_ref: str,
+    cols: list[str],
+    schema_types: dict[str, str] | None = None,
+) -> None:
     from google.cloud import bigquery
     from google.api_core.exceptions import NotFound
+
+    schema_types = schema_types or {}
 
     try:
         table = client.get_table(target_ref)
         existing = {field.name for field in table.schema}
     except NotFound:
-        schema = [bigquery.SchemaField(col, "STRING") for col in cols]
+        schema = [bigquery.SchemaField(col, schema_types.get(col, "STRING")) for col in cols]
         client.create_table(bigquery.Table(target_ref, schema=schema))
         existing = set(cols)
 
     missing = [col for col in cols if col not in existing]
     for col in missing:
-        sql = f"ALTER TABLE `{target_ref}` ADD COLUMN IF NOT EXISTS `{col}` STRING"
+        sql = (
+            f"ALTER TABLE `{target_ref}` "
+            f"ADD COLUMN IF NOT EXISTS `{col}` {schema_types.get(col, 'STRING')}"
+        )
         client.query(sql).result()
 
 
@@ -809,7 +831,12 @@ def publish_raw_replace_slice(
     try:
         client.load_table_from_dataframe(df_upload, temp_ref, job_config=load_config).result()
         if ensure_target:
-            _ensure_target_table(client, target_ref, list(df_upload.columns))
+            _ensure_target_table(
+                client,
+                target_ref,
+                list(df_upload.columns),
+                schema_types=schema_types,
+            )
 
         query_job = client.query(
             replace_sql,

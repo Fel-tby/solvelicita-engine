@@ -1,7 +1,7 @@
 # Metodologia do Score de Solvência
 
-**Versão:** 7.0  
-**Última atualização:** Março/2026  
+**Versão:** 8.0  
+**Última atualização:** Maio/2026  
 **Aviso:** Score baseado exclusivamente em dados oficiais declarados pelo próprio município ao Tesouro Nacional (SICONFI/RREO/RGF e FINBRA/DCA) e ao Governo Federal (CAUC/STN). Qualquer questionamento sobre os dados deve ser direcionado às fontes originais.
 
 > A evidência empírica de que o score discrimina risco real está documentada separadamente em [VALIDACAO.md](./VALIDACAO.md).
@@ -21,11 +21,15 @@ Não é um modelo de previsão de inadimplência pontual. É um score de risco r
 ## Fórmula
 
 ```
-S = 35·f(Lliq) + 10·(1 − Ccauc) + 15·g(Eorcam)
-  + 15·Qsiconfi + 10·h(Autonomia) + 15·i(RPproc)
+S = ICF_Lliq·40·f(Lliq) + 10·(1 − Ccauc)
+  + ICF_Eorcam·15·g(Eorcam)
+  + ICF_Autonomia·15·h(Autonomia)
+  + ICF_RPproc·20·i(RPproc)
 ```
 
-O score é expresso em pontos (0–100).
+O score é expresso em pontos (0–100). `Qsiconfi` deixa de ter peso numérico
+e passa a operar como medida de cobertura/cap duro; a qualidade formal dos
+dados SICONFI entra via ICF.
 
 ---
 
@@ -33,12 +37,48 @@ O score é expresso em pontos (0–100).
 
 | Variável | Fonte | O que mede | Peso | Frequência |
 |---|---|---|---|---|
-| `Lliq` | RGF Anexo 05 (SICONFI) | Liquidez líquida: DCL pós-RP excl. RPPS / Receita Realizada | 35% | Bimestral/Sem. |
+| `Lliq` | RGF Anexo 05 (SICONFI) | Liquidez líquida: DCL pós-RP excl. RPPS / Receita Realizada | 40% × ICF | Bimestral/Sem. |
 | `Ccauc` | CAUC/STN | Gravidade das pendências para recebimento federal | 10% | Diária |
-| `Eorcam` | RREO Anexo 01 (SICONFI) | Execução orçamentária média ponderada por recência | 15% | Bimestral/Sem. |
-| `Qsiconfi` | RREO histórico | % de anos com RREO entregue (2020–2025) + cap duro | 15% | Histórico |
-| `Autonomia` | DCA/FINBRA | Receita tributária própria / receita corrente | 10% | Anual |
-| `RPproc` | RREO Anexo 07 (SICONFI) | Cronicidade de restos a pagar liquidados não pagos | 15% | Bimestral/Sem. |
+| `Eorcam` | RREO Anexo 01 (SICONFI) | Execução orçamentária média ponderada por recência | 15% × ICF | Bimestral/Sem. |
+| `Qsiconfi` | RREO histórico | % de anos com RREO entregue (2021–ano corrente) + cap duro | 0% | Histórico |
+| `Autonomia` | DCA/FINBRA | Receita tributária própria / receita corrente | 15% × ICF | Anual |
+| `RPproc` | RREO Anexo 07 (SICONFI) | Cronicidade de restos a pagar liquidados não pagos | 20% × ICF | Bimestral/Sem. |
+
+---
+
+## ICF SICONFI — Modulador de confiança
+
+O ICF é o Ranking da Qualidade da Informação Contábil e Fiscal publicado pelo
+Tesouro Nacional. Ele não substitui os indicadores fiscais; ele reduz a
+contribuição dos indicadores cuja fonte é dado contábil/fiscal declarado pelo
+município ao SICONFI.
+
+| Conceito ICF | Fator aplicado |
+|---|---|
+| A | 1.00 |
+| B | 0.95 |
+| C | 0.90 |
+| D | 0.85 |
+| E | 0.80 |
+| Sem ICF | 0.80 |
+
+### Alinhamento temporal
+
+O ranking é publicado por edição, mas avalia o exercício anterior. Portanto:
+
+| Edição do ranking | Exercício avaliado no score |
+|---|---|
+| Ranking 2025 | Dados SICONFI de 2024 |
+| Ranking 2026 prévio | Dados SICONFI de 2025 |
+
+Para cada componente, o pipeline usa o ICF do mesmo exercício do dado fiscal
+avaliado. Quando o mesmo exercício ainda não existe, usa o ICF mais recente
+anterior do município e marca `icf_defasado = True`. O dado prévio oficial é
+permitido, mas fica marcado como `icf_previo = True` até a publicação final.
+
+O CAUC não recebe ICF, pois é verificação externa e não dado contábil
+autodeclarado. `Qsiconfi` também não recebe peso numérico; ele preserva o cap
+por ausência de entrega.
 
 ---
 
@@ -145,15 +185,15 @@ A zona saudável é entre 90% e 105%.
 
 ---
 
-## Qsiconfi — Qualidade e Transparência (peso 15% + cap duro)
+## Qsiconfi — Cobertura SICONFI (peso 0% + cap duro)
 
-Proporção de anos (2020–2025) em que o município enviou o RREO ao Tesouro Nacional.
+Proporção de anos (2021 até o ano corrente) em que o município enviou o RREO ao Tesouro Nacional.
 
 Na contagem de `anos_entregues`, o pipeline considera entrega válida quando existe **RREO normal ou RREO Simplificado** com **Anexo 01** utilizável no exercício.
 
-### Pontuação numérica
+### Pontuação de cobertura
 
-| Anos entregues (de 6) | Pontuação |
+| Anos entregues (de 6) | Cobertura |
 |---|---|
 | 6 | 1.0 |
 | 5 | 0.83 |
@@ -162,6 +202,10 @@ Na contagem de `anos_entregues`, o pipeline considera entrega válida quando exi
 | 2 | 0.33 |
 | 1 | 0.17 |
 | 0 | 0.0 |
+
+Essa cobertura não soma pontos diretamente no score v8.0. Ela continua sendo
+exportada como `qsiconfi` e `anos_entregues`, e continua acionando caps duros
+de classificação.
 
 ### Cap duro de classificação
 
@@ -178,7 +222,7 @@ Independente do score numérico calculado pelos demais indicadores:
 
 ---
 
-## Autonomia — Receita Tributária Própria (peso 10% + flag)
+## Autonomia — Receita Tributária Própria (peso 15% × ICF + flag)
 
 Calculado a partir do FINBRA/DCA. Mede a proporção da receita corrente gerada autonomamente pelo município (IPTU, ISS, ITBI e taxas), sem depender de repasses federais ou estaduais.
 
@@ -224,7 +268,7 @@ Os parâmetros regionais deslocam o ponto de inflexão da curva (`mu`) por porte
 
 ---
 
-## RPproc — Cronicidade de Restos a Pagar (peso 15% + cap duro)
+## RPproc — Cronicidade de Restos a Pagar (peso 20% × ICF + cap duro)
 
 Mede se o município tem **padrão crônico de não pagamento** de despesas já liquidadas.
 
@@ -293,7 +337,7 @@ Municípios com `n_anos_cronicos ≥ 4` têm classificação máxima **travada e
 ## Limitações
 
 - `Lliq` mede liquidez estrutural declarada — não substitui análise de fluxo de caixa diário ou due diligence jurídica
-- Dados SICONFI são autodeclarados pelo município — qualidade varia; `Qsiconfi` penaliza historicamente inconsistentes
+- Dados SICONFI são autodeclarados pelo município — qualidade varia; o ICF reduz a contribuição de indicadores SICONFI com menor qualidade formal, enquanto `Qsiconfi` limita a classificação quando falta entrega
 - CAUC é snapshot da data de coleta — pode mudar a qualquer momento; recoletar antes de qualquer decisão é recomendado
 - DCA/FINBRA tem defasagem anual estrutural (~14 meses no pior caso) — afeta `Autonomia` apenas; `Lliq` usa RGF com defasagem máxima de 90–210 dias
 - `Lliq` negativo extremo pode indicar distorção de RPPS ou cancelamento contábil de empenhos — flag `dado_suspeito` sinaliza, mas detecção completa requer auditoria manual do Balanço Patrimonial

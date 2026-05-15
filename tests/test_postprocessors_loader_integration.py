@@ -17,11 +17,18 @@ def test_dca_postprocessor_uses_loader_for_query_and_merge(monkeypatch):
 
     def fake_query_to_dataframe(query: str, *, strict: bool = True):
         calls["queries"].append((query, strict))
+        if "int_siconfi_icf_resolved" in query:
+            return pd.DataFrame(
+                [
+                    {"cod_ibge": 2800100, "ano": 2025, "fator_icf": 0.95},
+                    {"cod_ibge": 2800209, "ano": 2025, "fator_icf": 0.80},
+                ]
+            )
         return pd.DataFrame(
             [
-                {"cod_ibge": 2800100, "autonomia_raw": 0.05},
-                {"cod_ibge": 2800100, "autonomia_raw": 0.07},
-                {"cod_ibge": 2800209, "autonomia_raw": 0.10},
+                {"cod_ibge": 2800100, "ano": 2025, "autonomia_raw": 0.05},
+                {"cod_ibge": 2800100, "ano": 2024, "autonomia_raw": 0.07},
+                {"cod_ibge": 2800209, "ano": 2025, "autonomia_raw": 0.10},
             ]
         )
 
@@ -44,7 +51,7 @@ def test_dca_postprocessor_uses_loader_for_query_and_merge(monkeypatch):
     finally:
         shutil.rmtree(temp_root, ignore_errors=True)
 
-    assert len(calls["queries"]) == 1
+    assert len(calls["queries"]) == 2
     query, strict = calls["queries"][0]
     assert strict is True
     assert "`proj_teste.intermediate.int_autonomia_base`" in query
@@ -56,6 +63,7 @@ def test_dca_postprocessor_uses_loader_for_query_and_merge(monkeypatch):
     assert kwargs["key_cols"] == ["cod_ibge"]
     assert merged_df["uf"].tolist() == ["SP", "SP"]
     assert merged_df["autonomia_critica"].tolist() == [True, False]
+    assert "autonomia_icf_fator" in merged_df.columns
 
 
 def test_siconfi_postprocessor_uses_loader_for_query_and_merge(monkeypatch):
@@ -94,8 +102,46 @@ def test_siconfi_postprocessor_uses_loader_for_query_and_merge(monkeypatch):
             )
         if "SELECT cod_ibge, populacao FROM" in query:
             return pd.DataFrame([{"cod_ibge": 2800100, "populacao": 10000}])
+        if "int_siconfi_icf_resolved" in query:
+            return pd.DataFrame(
+                [
+                    {
+                        "cod_ibge": 2800100,
+                        "ano": 2025,
+                        "icf_exercicio": 2025,
+                        "status_icf": "PREVIO_OFICIAL",
+                        "conceito_icf": "B",
+                        "fator_icf": 0.95,
+                        "icf_previo": True,
+                        "icf_defasado": False,
+                        "icf_sem_registro": False,
+                    },
+                    {
+                        "cod_ibge": 2800100,
+                        "ano": 2024,
+                        "icf_exercicio": 2024,
+                        "status_icf": "FINAL",
+                        "conceito_icf": "A",
+                        "fator_icf": 1.0,
+                        "icf_previo": False,
+                        "icf_defasado": False,
+                        "icf_sem_registro": False,
+                    },
+                ]
+            )
         if "int_siconfi_indicadores_anuais" in query:
-            return pd.DataFrame([{"cod_ibge": 2800100, "uf": "SE", "instituicao": "Teste", "ano": 2025}])
+            return pd.DataFrame(
+                [
+                    {
+                        "cod_ibge": 2800100,
+                        "uf": "SE",
+                        "instituicao": "Teste",
+                        "ano": 2025,
+                        "entregou_rreo": True,
+                        "rproc_pct": 4.0,
+                    }
+                ]
+            )
         raise AssertionError(f"Consulta nao esperada: {query}")
 
     def fake_merge_dataframe_to_table(df, **kwargs):
@@ -120,10 +166,11 @@ def test_siconfi_postprocessor_uses_loader_for_query_and_merge(monkeypatch):
     finally:
         shutil.rmtree(temp_root, ignore_errors=True)
 
-    assert len(calls["queries"]) == 4
+    assert len(calls["queries"]) == 5
     assert all(strict is True for _, strict in calls["queries"])
     assert any("`proj_teste.intermediate.int_eorcam`" in query for query, _ in calls["queries"])
     assert any("`proj_teste.intermediate.int_lliq_base`" in query for query, _ in calls["queries"])
+    assert any("`proj_teste.intermediate.int_siconfi_icf_resolved`" in query for query, _ in calls["queries"])
     assert any("`proj_teste.mart.mart_indicadores_municipios`" in query for query, _ in calls["queries"])
     assert any("`proj_teste.intermediate.int_siconfi_indicadores_anuais`" in query for query, _ in calls["queries"])
 
@@ -134,3 +181,5 @@ def test_siconfi_postprocessor_uses_loader_for_query_and_merge(monkeypatch):
     assert merged_df["uf"].tolist() == ["SE"]
     assert "eorcam_raw" in merged_df.columns
     assert "lliq_raw" in merged_df.columns
+    assert "lliq_icf_fator" in merged_df.columns
+    assert "rproc_icf_fator" in merged_df.columns

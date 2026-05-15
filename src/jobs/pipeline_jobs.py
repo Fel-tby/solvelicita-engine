@@ -11,7 +11,7 @@ from pathlib import Path
 
 from src.config.br_regions import REGIAO_POR_UF
 from src.config.settings import build_runtime_env
-from src.collectors import cauc, dca, municipios, pncp, siconfi
+from src.collectors import cauc, dca, municipios, pncp, siconfi, siconfi_icf
 from src.engine import solvency
 from src.processors import dca_postprocessor, siconfi_postprocessor
 from src.utils.paths import find_ufs_with_artifact, get_paths
@@ -20,8 +20,8 @@ from src.utils.supabase_sync import run as supabase_sync
 
 ETAPAS_VALIDAS = {"collect", "dbt", "process", "score", "sync"}
 ETAPAS_ORDEM = ["collect", "dbt", "process", "score", "sync"]
-COLETORES_VALIDOS = {"municipios", "cauc", "siconfi", "dca", "pncp"}
-COLETORES_ORDEM = ["municipios", "cauc", "siconfi", "dca", "pncp"]
+COLETORES_VALIDOS = {"municipios", "cauc", "siconfi", "siconfi_icf", "dca", "pncp"}
+COLETORES_ORDEM = ["municipios", "cauc", "siconfi", "siconfi_icf", "dca", "pncp"]
 ALL_UFS_TOKEN = "ALL"
 ALL_UFS_BRASIL = [
     "AC", "AL", "AM", "AP", "BA", "CE", "DF", "ES", "GO",
@@ -364,6 +364,8 @@ def run_collect_job(request: CollectJobInput) -> CollectJobResult:
                 lambda: siconfi.run(mode=request.mode, uf=request.uf),
             )
         )
+    if "siconfi_icf" in coletores_ativos:
+        etapas_coleta.append(("SICONFI ICF", lambda: siconfi_icf.run(uf=request.uf)))
     if "dca" in coletores_ativos:
         etapas_coleta.append(
             (f"DCA [{request.mode}]", lambda: dca.run(mode=request.mode, uf=request.uf))
@@ -548,7 +550,7 @@ def resolve_collectors_job(request: ResolveCollectorsInput) -> ResolveCollectors
 
 
 def validate_all_uf_job(request: ValidateAllUfInput) -> ValidateAllUfResult:
-    permitido_sem_collect = {"process", "score", "sync"}
+    permitido_sem_collect = {"dbt", "process", "score", "sync"}
     permitido_com_collect_legado = {"collect", "dbt", "process", "score", "sync"}
 
     if "collect" in request.etapas:
@@ -567,7 +569,7 @@ def validate_all_uf_job(request: ValidateAllUfInput) -> ValidateAllUfResult:
 
     if not request.etapas.issubset(permitido_sem_collect):
         raise ValueError(
-            "  Erro: --uf ALL sem collect aceita apenas etapas entre process,score,sync."
+            "  Erro: --uf ALL sem collect aceita apenas etapas entre dbt,process,score,sync."
         )
 
     discovered = discover_present_ufs_job(

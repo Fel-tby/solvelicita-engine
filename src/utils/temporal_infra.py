@@ -21,9 +21,37 @@ DATASET_SNAPSHOTS = "snapshots"
 DATASET_ML = "ml"
 DATASET_ANALYTICS = "analytics"
 
+SNAPSHOT_EXTRA_COLUMNS = [
+    ("score_base_pre_icf", "FLOAT64"),
+    ("icf_fator_medio", "FLOAT64"),
+    ("eorcam_icf_fator", "FLOAT64"),
+    ("lliq_icf_fator", "FLOAT64"),
+    ("rproc_icf_fator", "FLOAT64"),
+    ("autonomia_icf_fator", "FLOAT64"),
+    ("lliq_icf_exercicio", "INT64"),
+    ("lliq_icf_status", "STRING"),
+    ("lliq_icf_conceito", "STRING"),
+    ("eorcam_icf_previo", "BOOL"),
+    ("eorcam_icf_defasado", "BOOL"),
+    ("eorcam_icf_sem_registro", "BOOL"),
+    ("lliq_icf_previo", "BOOL"),
+    ("lliq_icf_defasado", "BOOL"),
+    ("lliq_icf_sem_registro", "BOOL"),
+    ("rproc_icf_previo", "BOOL"),
+    ("rproc_icf_defasado", "BOOL"),
+    ("rproc_icf_sem_registro", "BOOL"),
+    ("autonomia_icf_previo", "BOOL"),
+    ("autonomia_icf_defasado", "BOOL"),
+    ("autonomia_icf_sem_registro", "BOOL"),
+    ("contrib_eorcam_base", "FLOAT64"),
+    ("contrib_lliq_base", "FLOAT64"),
+    ("contrib_autonomia_base", "FLOAT64"),
+    ("contrib_rproc_base", "FLOAT64"),
+]
+
 
 def _ddl_statements(project: str) -> list[str]:
-    return [
+    statements = [
         f"CREATE SCHEMA IF NOT EXISTS `{project}.{DATASET_SNAPSHOTS}`",
         f"CREATE SCHEMA IF NOT EXISTS `{project}.{DATASET_ML}`",
         f"CREATE SCHEMA IF NOT EXISTS `{project}.{DATASET_ANALYTICS}`",
@@ -70,6 +98,7 @@ def _ddl_statements(project: str) -> list[str]:
           score FLOAT64,
           classificacao STRING,
           score_base FLOAT64,
+          score_base_pre_icf FLOAT64,
           score_bruto FLOAT64,
 
           anos_entregues INT64,
@@ -80,6 +109,26 @@ def _ddl_statements(project: str) -> list[str]:
           qsiconfi FLOAT64,
           ccauc FLOAT64,
           autonomia_media FLOAT64,
+          icf_fator_medio FLOAT64,
+          eorcam_icf_fator FLOAT64,
+          lliq_icf_fator FLOAT64,
+          rproc_icf_fator FLOAT64,
+          autonomia_icf_fator FLOAT64,
+          lliq_icf_exercicio INT64,
+          lliq_icf_status STRING,
+          lliq_icf_conceito STRING,
+          eorcam_icf_previo BOOL,
+          eorcam_icf_defasado BOOL,
+          eorcam_icf_sem_registro BOOL,
+          lliq_icf_previo BOOL,
+          lliq_icf_defasado BOOL,
+          lliq_icf_sem_registro BOOL,
+          rproc_icf_previo BOOL,
+          rproc_icf_defasado BOOL,
+          rproc_icf_sem_registro BOOL,
+          autonomia_icf_previo BOOL,
+          autonomia_icf_defasado BOOL,
+          autonomia_icf_sem_registro BOOL,
 
           eorcam_norm FLOAT64,
           lliq_norm FLOAT64,
@@ -92,6 +141,10 @@ def _ddl_statements(project: str) -> list[str]:
           contrib_ccauc FLOAT64,
           contrib_autonomia FLOAT64,
           contrib_rproc FLOAT64,
+          contrib_eorcam_base FLOAT64,
+          contrib_lliq_base FLOAT64,
+          contrib_autonomia_base FLOAT64,
+          contrib_rproc_base FLOAT64,
 
           pen_lliq_parcial FLOAT64,
           pen_situacional FLOAT64,
@@ -385,6 +438,16 @@ def _ddl_statements(project: str) -> list[str]:
         FROM calc
         """,
     ]
+    statements.extend(
+        [
+            f"""
+            ALTER TABLE `{project}.snapshots.municipios_risco_snapshot`
+            ADD COLUMN IF NOT EXISTS `{name}` {field_type}
+            """
+            for name, field_type in SNAPSHOT_EXTRA_COLUMNS
+        ]
+    )
+    return statements
 
 
 def ensure_temporal_infra() -> bool:

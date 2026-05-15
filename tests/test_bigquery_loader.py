@@ -71,6 +71,57 @@ def test_coerce_raw_upload_types_preserva_tabelas_nao_siconfi():
     assert result["exercicio"].iloc[0] == "2025"
 
 
+def test_coerce_raw_upload_types_tipifica_siconfi_icf():
+    df = pd.DataFrame(
+        [
+            {
+                "uf": "PB",
+                "cod_ibge": "2500106",
+                "exercicio": "2025",
+                "edicao_ranking": "2026",
+                "fator_icf": "0.95",
+                "percentual_acertos": "0.92",
+                "posicao_ranking": "10",
+            }
+        ]
+    )
+
+    result, schema_types = _coerce_raw_upload_types(df, "siconfi_icf")
+
+    assert schema_types == {
+        "edicao_ranking": "INT64",
+        "exercicio": "INT64",
+        "fator_icf": "NUMERIC",
+        "percentual_acertos": "NUMERIC",
+        "posicao_ranking": "INT64",
+    }
+    assert str(result["exercicio"].dtype) == "Int64"
+    assert str(result["edicao_ranking"].dtype) == "Int64"
+    assert str(result["posicao_ranking"].dtype) == "Int64"
+    assert str(result["fator_icf"].iloc[0]) == "0.95"
+
+
+def test_coerce_raw_upload_types_limita_numeric_a_escala_do_bigquery():
+    df = pd.DataFrame(
+        [
+            {
+                "uf": "SP",
+                "cod_ibge": "3550308",
+                "exercicio": "2025",
+                "percentual_acertos": "0.8765432109876543",
+                "total_pontos": "123.1234567895",
+            }
+        ]
+    )
+
+    result, schema_types = _coerce_raw_upload_types(df, "siconfi_icf")
+
+    assert schema_types["percentual_acertos"] == "NUMERIC"
+    assert schema_types["total_pontos"] == "NUMERIC"
+    assert str(result["percentual_acertos"].iloc[0]) == "0.876543211"
+    assert str(result["total_pontos"].iloc[0]) == "123.12345679"
+
+
 def test_dedupe_by_keys_keeps_last():
     df = pd.DataFrame(
         [

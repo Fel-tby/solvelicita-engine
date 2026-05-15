@@ -27,6 +27,18 @@ models:
       - name: cod_ibge
         tests: [not_null]
 
+  - name: stg_siconfi_icf
+    columns:
+      - name: cod_ibge
+        tests: [not_null]
+      - name: ano
+        tests: [not_null]
+      - name: conceito_icf
+        tests:
+          - accepted_values:
+              arguments:
+                values: ['A', 'B', 'C', 'D', 'E', 'SEM_ICF']
+
   - name: stg_dca
     columns:
       - name: cod_ibge

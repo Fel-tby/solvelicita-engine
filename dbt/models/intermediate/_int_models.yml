@@ -83,6 +83,19 @@ models:
       - name: anos_entregues
         tests: [not_null]
 
+  - name: int_siconfi_icf_resolved
+    description: >
+      Fator ICF resolvido por municipio/ano. Usa o ICF do mesmo exercicio
+      quando existe; caso contrario usa o ICF mais recente anterior e marca
+      defasagem. Grain: (cod_ibge, ano).
+    columns:
+      - name: cod_ibge
+        tests: [not_null]
+      - name: ano
+        tests: [not_null]
+      - name: fator_icf
+        tests: [not_null]
+
   - name: int_cauc_gravidade
     description: >
       Gravidade das pendências CAUC por município (snapshot diário).

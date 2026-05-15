@@ -131,6 +131,26 @@ def test_validate_all_uf_job_sem_collect_usa_todas_as_ufs_descobertas(monkeypatc
     assert result.all_legado is False
 
 
+def test_validate_all_uf_job_sem_collect_permite_dbt(monkeypatch):
+    monkeypatch.setattr(
+        pipeline_jobs,
+        "discover_present_ufs_job",
+        lambda request: pipeline_jobs.DiscoverPresentUfsResult(["MG", "PB", "SE"]),
+    )
+
+    result = pipeline_jobs.validate_all_uf_job(
+        pipeline_jobs.ValidateAllUfInput(
+            mode="incremental",
+            etapas={"dbt", "process", "score"},
+            coletores=None,
+            root=Path.cwd(),
+        )
+    )
+
+    assert result.ufs == ["MG", "PB", "SE"]
+    assert result.all_legado is False
+
+
 def test_resolve_collectors_job_returns_explicit_result():
     result = pipeline_jobs.resolve_collectors_job(
         pipeline_jobs.ResolveCollectorsInput(
