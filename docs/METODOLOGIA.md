@@ -307,10 +307,10 @@ Municípios com `n_anos_cronicos ≥ 4` têm classificação máxima **travada e
 
 | Score | Classificação |
 |---|---|
-| 80–100 | 🟢 Risco Baixo |
-| 60–79 | 🟡 Risco Médio |
-| 40–59 | 🔴 Risco Alto |
-| 0–39 | ⛔ Crítico |
+| 75–100 | 🟢 Risco Baixo |
+| 55–74 | 🟡 Risco Médio |
+| 35–54 | 🔴 Risco Alto |
+| 0–34 | ⛔ Crítico |
 | — | ⚫ Sem Dados |
 
 **Caps duros independentes do score numérico:**

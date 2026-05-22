@@ -1,5 +1,5 @@
 """
-backtest_validacao.py - Validacao walk-forward do Score de Solvencia v7.0
+backtest_validacao.py - Validacao walk-forward do Score de Solvencia v8.0
 
 Estrategia:
   Para cada par de anos consecutivos (T0, T1), calcula o score com dados
@@ -10,11 +10,11 @@ Estrategia:
 Dois regimes de dados:
   Era Parcial  (2020->2021, 2021->2022, 2022->2023)
     lliq ausente - RGF Anexo 05 nao coletado para esse periodo.
-    Apenas 55% dos pesos ativos (eorcam + qsiconfi + rproc).
+    O score e recalculado com redistribuicao entre os componentes ativos.
 
   Era Completa (2023->2024, 2024->2025)
-    Score pleno. Todos os componentes ativos exceto CAUC e Autonomia
-    (ver limitacoes abaixo). 75% dos pesos ativos.
+    Score pleno no contrato SICONFI historico. CAUC e Autonomia seguem
+    neutralizados como sinal historico, com Autonomia modulada pelo ICF.
 
 Modos de execucao:
   1. Analise por UF
@@ -66,8 +66,10 @@ for candidate in (ROOT, SRC_ROOT):
     if candidate_str not in sys.path:
         sys.path.insert(0, candidate_str)
 
-from src.utils.paths import get_paths
+from src.utils.paths import get_artifact_path, get_paths
 from src.config.br_regions import REGIAO_POR_UF
+from src.scorers import config as cfg_module
+from src.scorers.config import ICF_FATOR_SEM_REGISTRO, N_ANOS_CRONICOS_CAP_MEDIO
 
 ANALYSIS_ROOT = ROOT / "data" / "analysis"
 ANALYSIS_ROOT.mkdir(parents=True, exist_ok=True)
@@ -75,6 +77,17 @@ REQUIRED_COLUMNS = {
     "cod_ibge", "ano", "instituicao", "populacao", "entregou_rreo",
     "eorcam", "rproc_pct", "periodo_rgf"
 }
+ICF_COLUMNS = [
+    "cod_ibge",
+    "ano",
+    "icf_exercicio",
+    "icf_status",
+    "icf_conceito",
+    "icf_fator",
+    "icf_previo",
+    "icf_defasado",
+    "icf_sem_registro",
+]
 
 
 # Anos com ruido estrutural externo conhecido.
@@ -89,6 +102,116 @@ def _normalizar_entregou_rreo(df: pd.DataFrame) -> pd.DataFrame:
         {True: True, False: False, "True": True, "False": False}
     ).fillna(False)
     return df
+
+
+def _default_icf_rows(targets: pd.DataFrame) -> pd.DataFrame:
+    out = targets[["cod_ibge", "ano"]].copy()
+    out["icf_exercicio"] = pd.NA
+    out["icf_status"] = "SEM_ICF"
+    out["icf_conceito"] = "SEM_ICF"
+    out["icf_fator"] = ICF_FATOR_SEM_REGISTRO
+    out["icf_previo"] = False
+    out["icf_defasado"] = False
+    out["icf_sem_registro"] = True
+    return out[ICF_COLUMNS]
+
+
+def carregar_icf_uf(uf: str) -> pd.DataFrame:
+    caminho = get_artifact_path(uf, "siconfi_icf", create_parent=False)
+    cols = [
+        "cod_ibge",
+        "icf_exercicio",
+        "icf_status",
+        "icf_conceito",
+        "icf_fator",
+    ]
+    if not caminho.exists():
+        return pd.DataFrame(columns=cols)
+
+    df = pd.read_csv(caminho, dtype={"cod_ibge": str})
+    exercicio_col = "exercicio" if "exercicio" in df.columns else "ano"
+    if exercicio_col not in df.columns:
+        return pd.DataFrame(columns=cols)
+
+    df = df.rename(
+        columns={
+            exercicio_col: "icf_exercicio",
+            "status_icf": "icf_status",
+            "conceito_icf": "icf_conceito",
+            "fator_icf": "icf_fator",
+        }
+    )
+    df["cod_ibge"] = df["cod_ibge"].astype(str).str.zfill(7)
+    df["icf_exercicio"] = pd.to_numeric(df["icf_exercicio"], errors="coerce")
+    df["icf_fator"] = (
+        pd.to_numeric(df.get("icf_fator"), errors="coerce")
+        .fillna(ICF_FATOR_SEM_REGISTRO)
+        .clip(lower=ICF_FATOR_SEM_REGISTRO, upper=1.0)
+    )
+    if "icf_status" not in df.columns:
+        df["icf_status"] = "SEM_ICF"
+    if "icf_conceito" not in df.columns:
+        df["icf_conceito"] = "SEM_ICF"
+    df["icf_status"] = df["icf_status"].fillna("SEM_ICF")
+    df["icf_conceito"] = df["icf_conceito"].fillna("SEM_ICF")
+    return df[cols].dropna(subset=["cod_ibge", "icf_exercicio"])
+
+
+def anexar_icf_resolvido(df: pd.DataFrame, uf: str) -> pd.DataFrame:
+    """
+    Replica a regra do int_siconfi_icf_resolved para o CSV historico:
+    usa o ICF do mesmo exercicio; se ausente, usa o mais recente anterior.
+    """
+    targets = df[["cod_ibge", "ano"]].drop_duplicates().copy()
+    targets["cod_ibge"] = targets["cod_ibge"].astype(str).str.zfill(7)
+    targets["ano"] = pd.to_numeric(targets["ano"], errors="coerce")
+
+    icf = carregar_icf_uf(uf)
+    if icf.empty:
+        resolved = _default_icf_rows(targets)
+    else:
+        lookup = {
+            cod: grp.sort_values("icf_exercicio")
+            for cod, grp in icf.groupby("cod_ibge", sort=False)
+        }
+        rows = []
+        for target in targets.to_dict("records"):
+            cod = target["cod_ibge"]
+            ano = target["ano"]
+            row = {
+                "cod_ibge": cod,
+                "ano": ano,
+                "icf_exercicio": pd.NA,
+                "icf_status": "SEM_ICF",
+                "icf_conceito": "SEM_ICF",
+                "icf_fator": ICF_FATOR_SEM_REGISTRO,
+                "icf_previo": False,
+                "icf_defasado": False,
+                "icf_sem_registro": True,
+            }
+            grp = lookup.get(cod)
+            if grp is not None and pd.notna(ano):
+                candidatos = grp[grp["icf_exercicio"] <= ano]
+                if not candidatos.empty:
+                    hit = candidatos.iloc[-1]
+                    row.update(
+                        {
+                            "icf_exercicio": int(hit["icf_exercicio"]),
+                            "icf_status": hit["icf_status"],
+                            "icf_conceito": hit["icf_conceito"],
+                            "icf_fator": float(hit["icf_fator"]),
+                            "icf_previo": hit["icf_status"] == "PREVIO_OFICIAL",
+                            "icf_defasado": int(hit["icf_exercicio"]) < int(ano),
+                            "icf_sem_registro": False,
+                        }
+                    )
+            rows.append(row)
+        resolved = pd.DataFrame(rows)[ICF_COLUMNS]
+
+    out = df.copy()
+    out["cod_ibge"] = out["cod_ibge"].astype(str).str.zfill(7)
+    out["ano"] = pd.to_numeric(out["ano"], errors="coerce")
+    return out.merge(resolved, on=["cod_ibge", "ano"], how="left")
 
 
 def carregar_siconfi_uf(uf: str) -> pd.DataFrame:
@@ -106,6 +229,7 @@ def carregar_siconfi_uf(uf: str) -> pd.DataFrame:
             f"Colunas ausentes: {', '.join(faltantes)}"
         )
     df = _normalizar_entregou_rreo(df)
+    df = anexar_icf_resolvido(df, uf)
     df["uf"] = uf
     return df
 
@@ -160,7 +284,7 @@ def carregar_siconfi_geral() -> tuple[pd.DataFrame, list[str], list[str]]:
 
 def score_lliq(lliq):
     """
-    Curva linear por segmentos - v7.0.
+    Curva linear por segmentos - v8.0.
     Retorna (norm 0.0-1.0, flag_suspeito).
     """
     if pd.isna(lliq):
@@ -205,12 +329,16 @@ def eorcam_ponderado(df_mun, ano_t):
         df_mun[(df_mun["ano"] <= ano_t) & df_mun["eorcam"].notna()]["ano"].unique(),
         reverse=True,
     )
-    total_peso = total_pond = 0.0
+    total_peso = total_pond = total_icf = 0.0
     for i, ano in enumerate(anos_disp[:5]):
         p = pesos_rel[i]
-        total_pond += p * df_mun.loc[df_mun["ano"] == ano, "eorcam"].values[0]
+        row = df_mun.loc[df_mun["ano"] == ano].iloc[0]
+        total_pond += p * row["eorcam"]
+        total_icf += p * row.get("icf_fator", ICF_FATOR_SEM_REGISTRO)
         total_peso += p
-    return total_pond / total_peso if total_peso > 0 else None
+    if total_peso <= 0:
+        return None, ICF_FATOR_SEM_REGISTRO
+    return total_pond / total_peso, total_icf / total_peso
 
 
 def score_qsiconfi(anos_entregues, max_anos):
@@ -226,26 +354,25 @@ def score_rproc(n_cronicos):
     return tabela.get(n_cronicos, 0.00)
 
 
-# Espelho de scorers/config.py - manter sincronizado a cada versao.
-PESOS = dict(lliq=35, cauc=10, eorcam=15, qsiconfi=15, autonomia=10, rproc=15)
-
-
 def calcular_score(lliq_n, eorcam_n, qsiconfi_n, rproc_n,
                    cauc_n=0.0, autonomia_n=0.5,
-                   incluir_rproc=True):
+                   incluir_rproc=True, uf="PB",
+                   lliq_icf=1.0, eorcam_icf=1.0,
+                   rproc_icf=1.0, autonomia_icf=1.0):
     """
     Agrega os componentes normalizados no score final (0-100).
 
     Componentes ausentes (None) ou explicitamente excluidos sao removidos
     e seus pesos redistribuidos proporcionalmente entre os ativos.
     """
+    pesos = cfg_module.get_pesos(uf)
     componentes = {
-        "lliq": (lliq_n, PESOS["lliq"]),
-        "cauc": (1 - cauc_n, PESOS["cauc"]),
-        "eorcam": (eorcam_n, PESOS["eorcam"]),
-        "qsiconfi": (qsiconfi_n, PESOS["qsiconfi"]),
-        "autonomia": (autonomia_n, PESOS["autonomia"]),
-        "rproc": (rproc_n, PESOS["rproc"]),
+        "lliq": (lliq_n, pesos["lliq"], lliq_icf),
+        "ccauc": (1 - cauc_n, pesos["ccauc"], 1.0),
+        "eorcam": (eorcam_n, pesos["eorcam"], eorcam_icf),
+        "qsiconfi": (qsiconfi_n, pesos["qsiconfi"], 1.0),
+        "autonomia": (autonomia_n, pesos["autonomia"], autonomia_icf),
+        "rproc": (rproc_n, pesos["rproc"], rproc_icf),
     }
     excluir = set()
     if lliq_n is None:
@@ -254,23 +381,54 @@ def calcular_score(lliq_n, eorcam_n, qsiconfi_n, rproc_n,
         excluir.add("rproc")
 
     ativos = {k: v for k, v in componentes.items() if k not in excluir}
-    ativos = {k: (0.5 if v is None else v, p) for k, (v, p) in ativos.items()}
+    ativos = {k: (0.5 if v is None else v, p, f) for k, (v, p, f) in ativos.items()}
 
-    peso_total = sum(p for _, p in ativos.values())
-    score = sum(v * p for v, p in ativos.values()) / peso_total * 100
+    peso_total = sum(p for _, p, _ in ativos.values())
+    score_base_pre_icf = sum(v * p for v, p, _ in ativos.values()) / peso_total * 100
+    score = sum(v * p * f for v, p, f in ativos.values()) / peso_total * 100
+    peso_icf = sum(
+        p for k, (_, p, _) in ativos.items()
+        if k in {"lliq", "eorcam", "autonomia", "rproc"}
+    )
+    icf_fator_medio = (
+        sum(
+            p * f for k, (_, p, f) in ativos.items()
+            if k in {"lliq", "eorcam", "autonomia", "rproc"}
+        ) / peso_icf
+        if peso_icf > 0 else 1.0
+    )
     era = "completa" if lliq_n is not None else "parcial"
-    return round(score, 2), era
+    return round(score, 2), era, round(score_base_pre_icf, 2), round(icf_fator_medio, 6)
 
 
-def classificar(score):
-    """Limiares v7.0: >=80 Baixo | >=60 Medio | >=40 Alto | <40 Critico."""
+def _cap_classe(classe_atual: str, teto: str) -> str:
+    ordem = ["BAIXO", "MEDIO", "ALTO", "CRITICO"]
+    return ordem[max(ordem.index(classe_atual), ordem.index(teto))]
+
+
+def classificar(score, anos_entregues: int, n_anos_cronicos: int):
+    """Limiares v8.0 com caps duros de RPproc e Qsiconfi."""
+    if pd.isna(score) or int(anos_entregues) == 0:
+        return "SEM_DADOS"
+
     if score >= 80:
-        return "BAIXO"
-    if score >= 60:
-        return "MEDIO"
-    if score >= 40:
-        return "ALTO"
-    return "CRITICO"
+        classe = "BAIXO"
+    elif score >= 60:
+        classe = "MEDIO"
+    elif score >= 40:
+        classe = "ALTO"
+    else:
+        classe = "CRITICO"
+
+    if int(n_anos_cronicos) >= N_ANOS_CRONICOS_CAP_MEDIO:
+        classe = _cap_classe(classe, "MEDIO")
+
+    if int(anos_entregues) <= 2:
+        classe = _cap_classe(classe, "ALTO")
+    elif int(anos_entregues) == 3:
+        classe = _cap_classe(classe, "MEDIO")
+
+    return classe
 
 
 PARES_ANOS = [
@@ -312,12 +470,17 @@ def construir_pares(df, incluir_rproc=True, excluir_t0=None):
 
             df_mun = df[df["cod_ibge"] == cod]
 
-            eorcam_w = eorcam_ponderado(df_mun, t0)
+            eorcam_w, eorcam_icf = eorcam_ponderado(df_mun, t0)
             eorcam_n = score_eorcam(eorcam_w)
 
             lliq_raw = row_t0.get("lliq", np.nan)
             lliq_raw = None if pd.isna(lliq_raw) else lliq_raw
             lliq_n, suspeito = score_lliq(lliq_raw)
+            lliq_icf = (
+                ICF_FATOR_SEM_REGISTRO
+                if pd.isna(row_t0.get("icf_fator"))
+                else float(row_t0.get("icf_fator"))
+            )
 
             anos_janela = list(range(2020, t0 + 1))
             anos_entregues = int(df_mun[
@@ -332,8 +495,18 @@ def construir_pares(df, incluir_rproc=True, excluir_t0=None):
                 ]["rproc_pct"] > 3.0
             ).sum())
             rproc_n = score_rproc(n_cronicos)
+            rproc_icf_base = df_mun[
+                (df_mun["ano"] < t0)
+                & df_mun["rproc_pct"].notna()
+                & df_mun["icf_fator"].notna()
+            ]["icf_fator"]
+            rproc_icf = (
+                float(rproc_icf_base.mean())
+                if len(rproc_icf_base) else ICF_FATOR_SEM_REGISTRO
+            )
+            autonomia_icf = lliq_icf
 
-            score, era = calcular_score(
+            score, era, score_base_pre_icf, icf_fator_medio = calcular_score(
                 lliq_n,
                 eorcam_n,
                 qsiconfi_n,
@@ -341,6 +514,11 @@ def construir_pares(df, incluir_rproc=True, excluir_t0=None):
                 cauc_n=0.0,
                 autonomia_n=0.5,
                 incluir_rproc=incluir_rproc,
+                uf=str(row_t0.get("uf", "PB")),
+                lliq_icf=lliq_icf,
+                eorcam_icf=eorcam_icf,
+                rproc_icf=rproc_icf,
+                autonomia_icf=autonomia_icf,
             )
 
             registros.append({
@@ -353,14 +531,20 @@ def construir_pares(df, incluir_rproc=True, excluir_t0=None):
                 "ano_t1": t1,
                 "era": era,
                 "score_t0": score,
-                "classe_t0": classificar(score),
+                "score_base_pre_icf": score_base_pre_icf,
+                "icf_fator_medio": icf_fator_medio,
+                "classe_t0": classificar(score, anos_entregues, n_cronicos),
                 "lliq_raw": lliq_raw,
                 "lliq_norm": lliq_n,
+                "lliq_icf_fator": round(lliq_icf, 6),
                 "eorcam_w": round(eorcam_w, 2) if eorcam_w is not None else None,
                 "eorcam_norm": round(eorcam_n, 4) if eorcam_n is not None else None,
+                "eorcam_icf_fator": round(eorcam_icf, 6),
                 "qsiconfi_norm": round(qsiconfi_n, 4),
+                "anos_entregues_t0": anos_entregues,
                 "n_cronicos_t0": n_cronicos,
                 "rproc_norm": round(rproc_n, 4),
+                "rproc_icf_fator": round(rproc_icf, 6),
                 "rproc_t0": row_t0["rproc_pct"],
                 "rproc_t1": rproc_t1,
                 "dado_suspeito": suspeito,
@@ -404,7 +588,7 @@ def tabela_desfecho_por_classe(pares):
     e proporcao que cruzou o limiar de 3% em T1.
     """
     linhas = []
-    for classe in ["BAIXO", "MEDIO", "ALTO", "CRITICO"]:
+    for classe in ["BAIXO", "MEDIO", "ALTO", "CRITICO", "SEM_DADOS"]:
         sub = pares[pares["classe_t0"] == classe]["rproc_t1"]
         if len(sub) == 0:
             continue
@@ -557,7 +741,7 @@ def gerar_relatorio(pares, incluir_rproc, excluir_t0=None, escopo="UF PB", ufs=N
     municipios = pares["cod_ibge"].nunique() if "cod_ibge" in pares.columns else 0
 
     w("=" * 70)
-    w("BACKTEST WALK-FORWARD - SCORE DE SOLVENCIA SOLVELICITA v7.0")
+    w("BACKTEST WALK-FORWARD - SCORE DE SOLVENCIA SOLVELICITA v8.0")
     w(f"Escopo: {escopo}")
     if ufs:
         w(f"UFs: {', '.join(ufs)}")
@@ -585,9 +769,17 @@ def gerar_relatorio(pares, incluir_rproc, excluir_t0=None, escopo="UF PB", ufs=N
     w("")
 
     w("PREMISSAS")
+    pesos = cfg_module.PESOS
+    w(
+        "  Pesos v8.0      : "
+        f"Lliq={pesos['lliq']} Ccauc={pesos['ccauc']} Eorcam={pesos['eorcam']} "
+        f"Qsiconfi={pesos['qsiconfi']} Aut={pesos['autonomia']} RPproc={pesos['rproc']}"
+    )
     w(f"  RPproc          : {'ativo' if incluir_rproc else 'desativado (--sem-rproc)'}")
     w("  CAUC            : neutro (0.0) - sem serie historica")
-    w("  Autonomia       : neutra (0.5) - sem serie historica no siconfi")
+    w("  Autonomia       : norm neutra (0.5), contribuicao modulada pelo ICF")
+    w("  Qsiconfi        : peso 0 no score numerico; preserva caps duros")
+    w("  ICF SICONFI     : fator historico aplicado a Lliq, Eorcam, RPproc e Autonomia")
     if excluir_t0:
         for ano in sorted(excluir_t0):
             nota = ANOS_ATIPICOS.get(ano, "excluido via --excluir-t0")
@@ -732,8 +924,8 @@ def gerar_relatorio(pares, incluir_rproc, excluir_t0=None, escopo="UF PB", ufs=N
 
     w("=" * 70)
     w("LIMITACOES DA VALIDACAO")
-    w("  1. CAUC e Autonomia sem serie historica - 20% dos pesos neutralizados.")
-    w("     O AUC real do score completo e provavelmente superior ao reportado.")
+    w("  1. CAUC e Autonomia seguem sem serie historica propria no backtest.")
+    w("     CAUC fica neutro e Autonomia usa norma 0.5 modulada por ICF.")
     w("  2. RPproc tem circularidade parcial com o desfecho.")
     w("     Rode --sem-rproc e compare os AUCs para quantificar o efeito.")
     w("  3. O backtest segue PB-first na calibracao original das premissas.")
@@ -745,7 +937,7 @@ def gerar_relatorio(pares, incluir_rproc, excluir_t0=None, escopo="UF PB", ufs=N
 
 def main():
     parser = argparse.ArgumentParser(
-        description="Backtest walk-forward - Score de Solvencia SolveLicita v7.0"
+        description="Backtest walk-forward - Score de Solvencia SolveLicita v8.0"
     )
     parser.add_argument("--uf", default="PB", help="UF da analise quando nao usar --geral")
     parser.add_argument("--geral", action="store_true",

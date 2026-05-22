@@ -6,6 +6,7 @@ source="bigquery" → lê mart.mart_indicadores_municipios
 
 import sys
 from pathlib import Path
+import json
 import unicodedata
 
 import pandas as pd
@@ -99,6 +100,54 @@ def _ascii_console(text: object) -> str:
     return " ".join(ascii_text.split())
 
 
+def _build_rproc_historico(df_si: pd.DataFrame) -> pd.DataFrame:
+    required = {"cod_ibge", "ano", "entregou_rreo", "rproc_pct"}
+    if not required.issubset(df_si.columns):
+        return pd.DataFrame(columns=["cod_ibge", "rproc_historico_json"])
+
+    df_hist = df_si[
+        df_si["ano"].isin(cfg_module.ANOS_REF)
+        & df_si["entregou_rreo"]
+        & df_si["rproc_pct"].notna()
+    ].copy()
+
+    if df_hist.empty:
+        return pd.DataFrame(columns=["cod_ibge", "rproc_historico_json"])
+
+    numeric_cols = ["ano", "rproc_pct", "rrestos_processados", "receita_realizada"]
+    for col in numeric_cols:
+        if col in df_hist.columns:
+            df_hist[col] = pd.to_numeric(df_hist[col], errors="coerce")
+
+    def build_payload(group: pd.DataFrame) -> str:
+        payload = []
+        for _, row in group.sort_values("ano").iterrows():
+            if pd.isna(row["ano"]) or pd.isna(row["rproc_pct"]):
+                continue
+
+            rproc_pct = float(row["rproc_pct"])
+            item = {
+                "ano": int(row["ano"]),
+                "rproc_pct": round(rproc_pct, 2),
+                "cronico": bool(rproc_pct > cfg_module.LIMIAR_RPROC_CRONICO),
+            }
+
+            for col in ["rrestos_processados", "receita_realizada"]:
+                if col in group.columns and pd.notna(row.get(col)):
+                    item[col] = round(float(row[col]), 2)
+
+            payload.append(item)
+
+        return json.dumps(payload, ensure_ascii=False)
+
+    return pd.DataFrame(
+        [
+            {"cod_ibge": cod_ibge, "rproc_historico_json": build_payload(group)}
+            for cod_ibge, group in df_hist.groupby("cod_ibge")
+        ]
+    )
+
+
 # Carga CSV (legado)
 
 def _carregar_csv(uf: str) -> pd.DataFrame:
@@ -134,9 +183,19 @@ def _carregar_csv(uf: str) -> pd.DataFrame:
         [["cod_ibge", "rproc_pct"]]
         .rename(columns={"rproc_pct": "rproc_pct_atual"})
     )
+    df_rproc_historico = _build_rproc_historico(df_si)
 
     df = df_mu[["cod_ibge", "ente", "populacao"]].copy()
-    for bloco in [df_eorcam, df_qsiconfi, df_cauc, df_autonomia, df_lliq, df_rproc_atual, df_rproc]:
+    for bloco in [
+        df_eorcam,
+        df_qsiconfi,
+        df_cauc,
+        df_autonomia,
+        df_lliq,
+        df_rproc_atual,
+        df_rproc_historico,
+        df_rproc,
+    ]:
         df = df.merge(bloco, on="cod_ibge", how="left")
 
     df["qsiconfi"]        = df["qsiconfi"].fillna(0)
@@ -392,6 +451,11 @@ def run(
     print(f"\nCarregando dados (source={source_label})...")
     df = _carregar_bq(uf, strict_bigquery=strict_bigquery) if source == "bigquery" else _carregar_csv(uf)
 
+    if "rproc_historico_json" not in df.columns:
+        df["rproc_historico_json"] = "[]"
+    else:
+        df["rproc_historico_json"] = df["rproc_historico_json"].fillna("[]")
+
     for col in [
         "contrib_lliq",
         "contrib_eorcam",
@@ -472,7 +536,7 @@ def run(
     OUT_COLS = [
         "cod_ibge", "ente", "populacao", "score", "classificacao",
         "anos_entregues", "eorcam_raw", "lliq_raw", "rproc_pct_atual",
-        "n_anos_cronicos", "qsiconfi", "ccauc", "autonomia_media",
+        "rproc_historico_json", "n_anos_cronicos", "qsiconfi", "ccauc", "autonomia_media",
         "n_graves", "n_moderadas", "n_leves", "pendencias", "pendencias_cauc_json",
         "eorcam_norm", "lliq_norm", "rproc_norm", "autonomia_norm",
         "icf_fator_medio",

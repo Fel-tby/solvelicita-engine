@@ -10,6 +10,7 @@ SELECT
     s.populacao,
 
     rp.rproc_pct_atual,
+    rp.rproc_historico_json,
 
     -- rproc
     rp.n_anos_cronicos                 AS n_anos_cronicos,

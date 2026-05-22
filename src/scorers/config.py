@@ -59,14 +59,14 @@ PESOS_EORCAM_ANO = {
     if ano in ANOS_EORCAM_REF
 }
 
-# Limiares de classificacao (v7.0)
-# v6.2: 75 / 55 / 35 -> v7.0: 80 / 60 / 40
-# Bandas uniformes de 20 pts. Classifier le daqui; nao hardcode nos scorers.
+# Limiares de classificacao (v8.0)
+# v8.0: 75 / 55 / 35 (suavizado apos remocao do qsiconfi)
+# Classifier le daqui; nao hardcode nos scorers.
 LIMIARES_SCORE = {
-    "baixo": 80,  # [80-100] Risco Baixo
-    "medio": 60,  # [60-79]  Risco Medio
-    "alto": 40,   # [40-59]  Risco Alto
-                  # [0-39]   Critico
+    "baixo": 75,  # [75-100] Risco Baixo
+    "medio": 55,  # [55-74]  Risco Medio
+    "alto": 35,   # [35-54]  Risco Alto
+                  # [0-34]   Critico
 }
 
 # Caps duros de classificacao

@@ -22,39 +22,39 @@ sys.path.insert(0, str(ROOT / "src"))
 from engine.classifier import classificar
 
 # ══════════════════════════════════════════════════════════════════════════════
-# Classificação base (sem caps)  —  limiares v7.0: 80 / 60 / 40
+# Classificação base (sem caps)  —  limiares v8.0: 75 / 55 / 35
 # ══════════════════════════════════════════════════════════════════════════════
 
 class TestClassificacaoBase:
     """Testa os limiares numéricos sem nenhum cap ativo."""
 
     def test_score_alto_risco_baixo(self):
-        """Score >= 80 -> Risco Baixo."""
-        assert classificar(80.0, 6, 0) == "🟢 Risco Baixo"
+        """Score >= 75 -> Risco Baixo."""
+        assert classificar(75.0, 6, 0) == "🟢 Risco Baixo"
         assert classificar(90.0, 6, 0) == "🟢 Risco Baixo"
 
     def test_score_medio_risco_medio(self):
-        """60 <= score < 80 -> Risco Medio."""
-        assert classificar(60.0, 6, 0) == "🟡 Risco Médio"
+        """55 <= score < 75 -> Risco Medio."""
+        assert classificar(55.0, 6, 0) == "🟡 Risco Médio"
         assert classificar(65.0, 6, 0) == "🟡 Risco Médio"
-        assert classificar(79.9, 6, 0) == "🟡 Risco Médio"
+        assert classificar(74.9, 6, 0) == "🟡 Risco Médio"
 
     def test_score_baixo_risco_alto(self):
-        """40 <= score < 60 -> Risco Alto."""
-        assert classificar(40.0, 6, 0) == "🔴 Risco Alto"
+        """35 <= score < 55 -> Risco Alto."""
+        assert classificar(35.0, 6, 0) == "🔴 Risco Alto"
         assert classificar(45.0, 6, 0) == "🔴 Risco Alto"
-        assert classificar(59.9, 6, 0) == "🔴 Risco Alto"
+        assert classificar(54.9, 6, 0) == "🔴 Risco Alto"
 
     def test_score_critico(self):
-        """Score < 40 -> Critico."""
-        assert classificar(39.9, 6, 0) == "⛔ Crítico"
+        """Score < 35 -> Critico."""
+        assert classificar(34.9, 6, 0) == "⛔ Crítico"
         assert classificar(0.0,  6, 0) == "⛔ Crítico"
 
     def test_score_exatamente_nos_limiares(self):
         """Testa os valores exatos de fronteira entre classes."""
-        assert classificar(80.0, 6, 0) == "🟢 Risco Baixo"
-        assert classificar(60.0, 6, 0) == "🟡 Risco Médio"
-        assert classificar(40.0, 6, 0) == "🔴 Risco Alto"
+        assert classificar(75.0, 6, 0) == "🟢 Risco Baixo"
+        assert classificar(55.0, 6, 0) == "🟡 Risco Médio"
+        assert classificar(35.0, 6, 0) == "🔴 Risco Alto"
 
 
 # ══════════════════════════════════════════════════════════════════════════════
@@ -105,11 +105,11 @@ class TestCapRproc:
 
     def test_3_anos_cronicos_nao_ativa_cap(self):
         """3 anos crônicos ainda não ativa o cap — score Baixo permanece Baixo."""
-        assert classificar(80.0, 6, 3) == "🟢 Risco Baixo"
+        assert classificar(75.0, 6, 3) == "🟢 Risco Baixo"
 
     def test_4_anos_cronicos_ativa_cap(self):
         """v7.0: threshold do cap baixou de >=5 para >=4 — score Baixo cai para Médio."""
-        assert classificar(80.0, 6, 4) == "🟡 Risco Médio"
+        assert classificar(75.0, 6, 4) == "🟡 Risco Médio"
 
     def test_6_anos_cronicos_tambem_ativa_cap(self):
         """Cap vale para >= 4 — 6 anos também trava em Médio."""
@@ -129,12 +129,12 @@ class TestCapQsiconfi:
     """
 
     def test_1_ano_entregue_score_alto_vira_risco_alto(self):
-        """Score 80 (seria Baixo) mas só 1 ano entregue -> teto Alto."""
-        assert classificar(80.0, 1, 0) == "🔴 Risco Alto"
+        """Score 75 (seria Baixo) mas só 1 ano entregue -> teto Alto."""
+        assert classificar(75.0, 1, 0) == "🔴 Risco Alto"
 
     def test_2_anos_entregues_score_alto_vira_risco_alto(self):
-        """Score 80 com 2 anos entregues -> teto Alto."""
-        assert classificar(80.0, 2, 0) == "🔴 Risco Alto"
+        """Score 75 com 2 anos entregues -> teto Alto."""
+        assert classificar(75.0, 2, 0) == "🔴 Risco Alto"
 
     def test_2_anos_entregues_ja_risco_alto_permanece(self):
         """Score 45 (Alto) com 2 anos -> cap não muda nada."""
@@ -145,12 +145,12 @@ class TestCapQsiconfi:
         assert classificar(20.0, 2, 0) == "⛔ Crítico"
 
     def test_3_anos_entregues_score_alto_vira_medio(self):
-        """Score 80 com 3 anos entregues -> teto Médio."""
-        assert classificar(80.0, 3, 0) == "🟡 Risco Médio"
+        """Score 75 com 3 anos entregues -> teto Médio."""
+        assert classificar(75.0, 3, 0) == "🟡 Risco Médio"
 
     def test_3_anos_entregues_ja_medio_permanece(self):
-        """Score 60 (Médio) com 3 anos -> permanece Médio."""
-        assert classificar(60.0, 3, 0) == "🟡 Risco Médio"
+        """Score 55 (Médio) com 3 anos -> permanece Médio."""
+        assert classificar(55.0, 3, 0) == "🟡 Risco Médio"
 
     def test_3_anos_entregues_risco_alto_permanece(self):
         """Score 45 (Alto) com 3 anos -> cap não melhora."""
@@ -158,11 +158,11 @@ class TestCapQsiconfi:
 
     def test_4_anos_entregues_sem_cap(self):
         """4 anos entregues -> sem cap de transparência, score Baixo permanece Baixo."""
-        assert classificar(80.0, 4, 0) == "🟢 Risco Baixo"
+        assert classificar(75.0, 4, 0) == "🟢 Risco Baixo"
 
     def test_6_anos_entregues_sem_cap(self):
         """Transparência total -> classificação depende só do score."""
-        assert classificar(80.0, 6, 0) == "🟢 Risco Baixo"
+        assert classificar(75.0, 6, 0) == "🟢 Risco Baixo"
         assert classificar(45.0, 6, 0) == "🔴 Risco Alto"
 
 

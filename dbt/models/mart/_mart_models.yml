@@ -17,6 +17,7 @@ models:
       - name: n_anos_cronicos
         tests: [not_null]
       - name: rproc_pct_atual
+      - name: rproc_historico_json
       - name: ccauc
         tests: [not_null]
       - name: pendencias

@@ -1,7 +1,7 @@
 """
 classifier.py — Classificação de risco e caps duros.
 Único arquivo do projeto onde ORDEM_RISCO e as regras de cap existem.
-Versão: 7.0
+Versão: 8.0
 """
 import pandas as pd
 from src.scorers.config import LIMIARES_SCORE, N_ANOS_CRONICOS_CAP_MEDIO
@@ -19,11 +19,11 @@ def classificar(score, anos_entregues: int, n_anos_cronicos: int) -> str:
     """
     Atribui classificação de risco ao score numérico.
 
-    Limiares v7.0 (lidos de scorers.config.LIMIARES_SCORE):
-      ≥ 80  → 🟢 Risco Baixo   (v6.2: 75)
-      ≥ 60  → 🟡 Risco Médio   (v6.2: 55)
-      ≥ 40  → 🔴 Risco Alto    (v6.2: 35)
-       < 40  → ⛔ Crítico       (v6.2: < 35)
+    Limiares v8.0 (lidos de scorers.config.LIMIARES_SCORE):
+      ≥ 75  → 🟢 Risco Baixo
+      ≥ 55  → 🟡 Risco Médio
+      ≥ 35  → 🔴 Risco Alto
+       < 35  → ⛔ Crítico
 
     Ordem de verificação:
       0. score ausente ou anos_entregues = 0  → ⚫ Sem Dados

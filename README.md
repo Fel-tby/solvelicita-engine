@@ -20,27 +20,30 @@ Esta aplicação é o componente técnico responsável pela inteligência de dad
 
 ## O score
 
-Um **Score de Solvência (0–100)** calculado a partir de seis indicadores fiscais públicos, ponderados por relevância:
+Um **Score de Solvência (0–100)** calculado a partir de indicadores fiscais públicos, ponderados por relevância:
 
 | Indicador | Fonte | Peso | O que mede |
 |---|---|---|---|
-| Liquidez Líquida | SICONFI / RGF Anexo 05 | **35%** | Caixa disponível após Restos a Pagar |
-| RP Crônicos | SICONFI / RREO Anexo 07 | **15%** | Histórico de dívidas com fornecedores |
+| Liquidez Líquida | SICONFI / RGF Anexo 05 | **40%** | Caixa disponível após Restos a Pagar |
+| RP Crônicos | SICONFI / RREO Anexo 07 | **20%** | Histórico de dívidas com fornecedores |
 | Execução Orçamentária | SICONFI / RREO Anexo 01 | **15%** | Aderência entre receita prevista e realizada |
-| Transparência Fiscal | SICONFI | **15%** | Continuidade de entrega de dados públicos |
-| Autonomia Tributária | FINBRA / DCA | **10%** | Dependência do FPM vs receita própria |
-| Bloqueio Federal | CAUC / STN | **10%** | Pendências que bloqueiam repasses federar |
+| Autonomia Tributária | FINBRA / DCA | **15%** | Dependência do FPM vs receita própria |
+| Bloqueio Federal | CAUC / STN | **10%** | Pendências que bloqueiam repasses federais |
+| Transparência Fiscal | SICONFI | **0%** | Cobertura/cap de dados contábeis entregues |
 
-A fórmula, as curvas de pontuação e as justificativas de cada escolha estão em [`docs/METODOLOGIA.md`](docs/METODOLOGIA.md).
+**Modulação por Confiabilidade (ICF SICONFI):**
+A Transparência Fiscal (`qsiconfi`) deixou de ter peso numérico direto e opera como cobertura e cap duro de classificação de risco. Em seu lugar, a confiabilidade formal dos dados é integrada através do **Ranking da Qualidade da Informação Contábil e Fiscal (ICF)** do Tesouro Nacional. Municípios com menor confiabilidade (conceito B a E) sofrem uma redução proporcional de score nos componentes calculados via SICONFI (multiplicadores de **1,0** para conceito A, decaindo até **0,80** para conceito E ou ausência de ranking).
+
+A fórmula detalhada, os multiplicadores de redução, as curvas de pontuação e as justificativas estão descritas em [`docs/METODOLOGIA.md`](docs/METODOLOGIA.md).
 
 **Classificação:**
 
 | Score | Classificação |
 |---|---|
-| ≥ 80 | 🟢 Risco Baixo |
-| 60 – 79 | 🟡 Risco Médio |
-| 40 – 59 | 🔴 Risco Alto |
-| < 40 | ⛔ Crítico |
+| ≥ 75 | 🟢 Risco Baixo |
+| 55 – 74 | 🟡 Risco Médio |
+| 35 – 54 | 🔴 Risco Alto |
+| < 35 | ⛔ Crítico |
 | — | ⚫ Sem Dados |
 
 Além do score numérico, dois caps de classificação operam de forma independente: municípios com histórico de não entrega de dados não podem ser classificados como Risco Baixo, e municípios com padrão crônico de Restos a Pagar Processados têm teto em Risco Médio.

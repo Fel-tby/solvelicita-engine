@@ -72,6 +72,11 @@ models:
         description: >
           Percentual mais recente de restos processados em relação à receita
           realizada, considerando o último ano com RREO válido.
+      - name: rproc_historico_json
+        description: >
+          JSON serializado com a serie anual de RP processados desde 2021,
+          incluindo ano, percentual sobre receita, valor de RP processados,
+          receita realizada e flag de ano cronico.
 
   - name: int_qsiconfi
     description: >

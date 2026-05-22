@@ -24,6 +24,7 @@ COLUNAS = {
     "contrib_autonomia": "contrib_autonomia", "contrib_rproc": "contrib_rproc",
     "lliq_raw": "lliq_raw", "eorcam_raw": "eorcam_raw",
     "rproc_pct_atual": "rproc_pct_atual",
+    "rproc_historico_json": "rproc_historico_json",
     "qsiconfi": "qsiconfi", "ccauc": "ccauc", "autonomia_media": "autonomia_media",
     "n_graves": "n_graves", "n_moderadas": "n_moderadas", "n_leves": "n_leves",
     "pendencias": "pendencias", "pendencias_cauc_json": "pendencias_cauc_json",
@@ -51,6 +52,38 @@ COLUNAS = {
     "pct_contratacao_direta": "pct_contratacao_direta",
     "ano_ultima_licitacao": "ano_ultima_licitacao",
     "pct_dispensa": "pct_dispensa", "alerta_dispensa": "alerta_dispensa",
+
+    # SICONFI ICF Quality columns
+    "icf_fator_medio": "icf_fator_medio",
+    "contrib_eorcam_base": "contrib_eorcam_base",
+    "contrib_lliq_base": "contrib_lliq_base",
+    "contrib_autonomia_base": "contrib_autonomia_base",
+    "contrib_rproc_base": "contrib_rproc_base",
+    "score_base_pre_icf": "score_base_pre_icf",
+    
+    "eorcam_icf_fator": "eorcam_icf_fator",
+    "eorcam_icf_previo": "eorcam_icf_previo",
+    "eorcam_icf_defasado": "eorcam_icf_defasado",
+    "eorcam_icf_sem_registro": "eorcam_icf_sem_registro",
+    
+    "lliq_ano": "lliq_ano",
+    "lliq_icf_exercicio": "lliq_icf_exercicio",
+    "lliq_icf_status": "lliq_icf_status",
+    "lliq_icf_conceito": "lliq_icf_conceito",
+    "lliq_icf_fator": "lliq_icf_fator",
+    "lliq_icf_previo": "lliq_icf_previo",
+    "lliq_icf_defasado": "lliq_icf_defasado",
+    "lliq_icf_sem_registro": "lliq_icf_sem_registro",
+    
+    "rproc_icf_fator": "rproc_icf_fator",
+    "rproc_icf_previo": "rproc_icf_previo",
+    "rproc_icf_defasado": "rproc_icf_defasado",
+    "rproc_icf_sem_registro": "rproc_icf_sem_registro",
+    
+    "autonomia_icf_fator": "autonomia_icf_fator",
+    "autonomia_icf_previo": "autonomia_icf_previo",
+    "autonomia_icf_defasado": "autonomia_icf_defasado",
+    "autonomia_icf_sem_registro": "autonomia_icf_sem_registro",
 }
 
 COLUNAS_INTEGER = {
@@ -59,11 +92,17 @@ COLUNAS_INTEGER = {
     "ano_ultima_licitacao",
     "n_anos_cronicos", "anos_entregues", "populacao", "dias_atraso",
     "n_graves", "n_moderadas", "n_leves",
+    "lliq_ano", "lliq_icf_exercicio",
 }
 COLUNAS_BOOLEAN = {
     "lliq_parcial", "dado_defasado", "dado_suspeito",
     "dado_suspeito_lliq", "autonomia_critica", "alerta_dispensa",
+    "eorcam_icf_previo", "eorcam_icf_defasado", "eorcam_icf_sem_registro",
+    "lliq_icf_previo", "lliq_icf_defasado", "lliq_icf_sem_registro",
+    "rproc_icf_previo", "rproc_icf_defasado", "rproc_icf_sem_registro",
+    "autonomia_icf_previo", "autonomia_icf_defasado", "autonomia_icf_sem_registro",
 }
+COLUNAS_JSON = {"rproc_historico_json"}
 
 def _conectar() -> Client:
     cfg = get_supabase_settings()
@@ -71,11 +110,27 @@ def _conectar() -> Client:
         raise EnvironmentError("SUPABASE_URL e SUPABASE_KEY precisam estar configurados no ambiente.")
     return create_client(cfg.url, cfg.key)
 
+def _sanitizar_json(value):
+    if value is None:
+        return []
+    if isinstance(value, float) and (math.isnan(value) or math.isinf(value)):
+        return []
+    if isinstance(value, (list, dict)):
+        return value
+    if isinstance(value, str):
+        text = value.strip()
+        if not text or text in {"NaN", "nan", "None", "none", "inf", "-inf"}:
+            return []
+        return json.loads(text)
+    return value
+
 def _sanitizar(rec: dict) -> dict:
     NAN_STRINGS = {"NaN", "nan", "None", "none", "inf", "-inf"}
     resultado = {}
     for k, v in rec.items():
-        if v is None:
+        if k in COLUNAS_JSON:
+            resultado[k] = _sanitizar_json(v)
+        elif v is None:
             resultado[k] = None
         elif isinstance(v, float) and (math.isnan(v) or math.isinf(v)):
             resultado[k] = None
@@ -93,7 +148,7 @@ def _preparar_registros(csv_path: Path, uf: str) -> list:
     colunas_presentes = {k: v for k, v in COLUNAS.items() if k in df.columns}
     ausentes = set(COLUNAS.keys()) - set(colunas_presentes.keys())
     if ausentes:
-        print(f"  ⚠️  Colunas ausentes (ignoradas): {sorted(ausentes)}")
+        print(f"  [AVISO] Colunas ausentes (ignoradas): {sorted(ausentes)}")
 
     df = df[list(colunas_presentes.keys())].rename(columns=colunas_presentes)
     df["uf"] = uf.upper()  # ← chave composta
@@ -123,8 +178,9 @@ def run(uf: str = "PB") -> None:
     print(f"Lendo {csv_path.name}...")
     registros = _preparar_registros(csv_path, uf)
 
+    import time
     print(f"Enviando {len(registros)} municípios (uf={uf})...")
-    LOTE = 100
+    LOTE = 30
     total = 0
     for i in range(0, len(registros), LOTE):
         lote = registros[i: i + LOTE]
@@ -136,8 +192,9 @@ def run(uf: str = "PB") -> None:
         n = len(response.data) if response.data else 0
         total += n
         print(f"  Lote {i // LOTE + 1}: {n} registros")
+        time.sleep(0.1)
 
-    print(f"✅ Supabase sincronizado — {total} registros.")
+    print(f"[OK] Supabase sincronizado — {total} registros.")
 
 if __name__ == "__main__":
     import argparse
